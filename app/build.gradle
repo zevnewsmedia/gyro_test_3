@@ -35,4 +35,9 @@ dependencies {
     testImplementation libs.junit
     androidTestImplementation libs.ext.junit
     androidTestImplementation libs.espresso.core
+    // Your existing dependencies...
+    implementation 'io.socket:socket.io-client:2.0.0'
+
+    // If you get compatibility issues, try this newer version instead:
+    // implementation 'io.socket:socket.io-client:2.0.1'
 }

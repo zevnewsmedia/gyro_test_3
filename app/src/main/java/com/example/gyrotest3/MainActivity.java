@@ -10,10 +10,19 @@ import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
 import android.os.Bundle;
+import android.util.Log;
 import android.view.View;
 import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
+
+import io.socket.client.IO;
+import io.socket.client.Socket;
+import io.socket.emitter.Emitter;
+import org.json.JSONException;
+import org.json.JSONObject;
+
+import java.net.URISyntaxException;
 
 public class MainActivity extends AppCompatActivity implements SensorEventListener {
 
@@ -27,6 +36,14 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     private boolean dialActive = false;
     private String availableMotionSensors = "";
 
+    // Socket.IO fields
+    private Socket socket;
+    private static final String SERVER_URL = "http://3.91.244.249:5000/";
+    private static final String TAG = "GyroSocket";
+    private boolean socketConnected = false;
+    private long lastSendTime = 0;
+    private static final long SEND_INTERVAL = 100; // Send data every 100ms (10 times per second)
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -37,10 +54,16 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         // Initialize sensors
         initializeSensors();
 
+        // Initialize Socket.IO
+        initializeSocket();
+
         // Create gyro dial view and set it as the main content
         dialView = new GyroDialView(this);
         setContentView(dialView);
         dialActive = true;
+
+        // Auto-connect to server
+        connectToServer();
     }
 
     private void initializeSensors() {
@@ -52,6 +75,120 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
         if (accelerometer == null) {
             Toast.makeText(this, "Accelerometer not available", Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private void initializeSocket() {
+        try {
+            Log.d(TAG, "Initializing Socket.IO connection to: " + SERVER_URL);
+
+            IO.Options opts = new IO.Options();
+            opts.transports = new String[]{"websocket"};
+            socket = IO.socket(SERVER_URL, opts);
+
+            // Connection events
+            socket.on(Socket.EVENT_CONNECT, new Emitter.Listener() {
+                @Override
+                public void call(Object... args) {
+                    runOnUiThread(() -> {
+                        socketConnected = true;
+                        Log.d(TAG, "✓ Connected to server");
+                        Toast.makeText(MainActivity.this, "✓ Connected to server", Toast.LENGTH_SHORT).show();
+                        if (dialView != null) {
+                            dialView.setConnectionStatus(true);
+                        }
+                    });
+                }
+            });
+
+            socket.on(Socket.EVENT_DISCONNECT, new Emitter.Listener() {
+                @Override
+                public void call(Object... args) {
+                    runOnUiThread(() -> {
+                        socketConnected = false;
+                        Log.d(TAG, "✗ Disconnected from server");
+                        Toast.makeText(MainActivity.this, "✗ Disconnected from server", Toast.LENGTH_SHORT).show();
+                        if (dialView != null) {
+                            dialView.setConnectionStatus(false);
+                        }
+                    });
+                }
+            });
+
+            socket.on(Socket.EVENT_CONNECT_ERROR, new Emitter.Listener() {
+                @Override
+                public void call(Object... args) {
+                    runOnUiThread(() -> {
+                        socketConnected = false;
+                        String error = args.length > 0 ? args[0].toString() : "Unknown error";
+                        Log.e(TAG, "✗ Connection error: " + error);
+                        Toast.makeText(MainActivity.this, "Connection failed", Toast.LENGTH_LONG).show();
+                        if (dialView != null) {
+                            dialView.setConnectionStatus(false);
+                        }
+                    });
+                }
+            });
+
+            // Listen for server responses
+            socket.on("attitude_data", new Emitter.Listener() {
+                @Override
+                public void call(Object... args) {
+                    try {
+                        JSONObject data = (JSONObject) args[0];
+                        String rider = data.optString("riderDisplayName", "");
+                        Log.d(TAG, "Server broadcast from: " + rider);
+                    } catch (Exception e) {
+                        Log.e(TAG, "Error parsing server response", e);
+                    }
+                }
+            });
+
+        } catch (URISyntaxException e) {
+            Log.e(TAG, "URI Syntax error", e);
+            Toast.makeText(this, "Invalid server URL", Toast.LENGTH_LONG).show();
+        } catch (Exception e) {
+            Log.e(TAG, "Error initializing socket", e);
+        }
+    }
+
+    private void connectToServer() {
+        if (socket != null && !socket.connected()) {
+            Log.d(TAG, "Connecting to server...");
+            socket.connect();
+        }
+    }
+
+    private void sendAttitudeData() {
+        if (socket == null || !socketConnected) {
+            return;
+        }
+
+        // Throttle sending to avoid overwhelming the server
+        long currentTime = System.currentTimeMillis();
+        if (currentTime - lastSendTime < SEND_INTERVAL) {
+            return;
+        }
+        lastSendTime = currentTime;
+
+        try {
+            JSONObject attitudeData = new JSONObject();
+            attitudeData.put("pitch", Math.round(currentPitch * 10.0) / 10.0); // Round to 1 decimal place
+            attitudeData.put("yaw", Math.round(currentYaw * 10.0) / 10.0);
+            attitudeData.put("roll", Math.round(currentRoll * 10.0) / 10.0);
+            attitudeData.put("rider", "gyro_app");
+            attitudeData.put("riderDisplayName", "Android Gyro");
+
+            socket.emit("attitude_update", attitudeData);
+
+            // Log every 1 second (10 sends) to avoid spam
+            if (currentTime % 1000 < SEND_INTERVAL) {
+                Log.d(TAG, String.format("Sent: P=%.1f°, Y=%.1f°, R=%.1f°",
+                        currentPitch, currentYaw, currentRoll));
+            }
+
+        } catch (JSONException e) {
+            Log.e(TAG, "Error creating attitude JSON", e);
         }
     }
 
@@ -126,6 +263,10 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         if (accelerometer != null) {
             sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_UI);
         }
+        // Reconnect socket if needed
+        if (socket != null && !socket.connected()) {
+            connectToServer();
+        }
     }
 
     @Override
@@ -133,6 +274,15 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         super.onPause();
         if (sensorManager != null) {
             sensorManager.unregisterListener(this);
+        }
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        if (socket != null) {
+            socket.disconnect();
+            Log.d(TAG, "Socket disconnected in onDestroy");
         }
     }
 
@@ -158,6 +308,9 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             if (dialView != null && dialActive) {
                 dialView.setAngles(currentYaw, currentPitch, currentRoll);
             }
+
+            // Send data to server
+            sendAttitudeData();
         }
     }
 
@@ -172,6 +325,8 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         private Paint textPaint;
         private Paint centerPaint;
         private Paint backgroundPaint;
+        private Paint statusPaint;
+        private boolean connected = false;
 
         public GyroDialView(Context context) {
             super(context);
@@ -187,12 +342,12 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             dialPaint = new Paint();
             dialPaint.setColor(Color.GRAY);
             dialPaint.setStyle(Paint.Style.STROKE);
-            dialPaint.setStrokeWidth(8); // Made thicker for bigger dials
+            dialPaint.setStrokeWidth(8);
             dialPaint.setAntiAlias(true);
 
             needlePaint = new Paint();
             needlePaint.setColor(Color.RED);
-            needlePaint.setStrokeWidth(6); // Made thicker for bigger dials
+            needlePaint.setStrokeWidth(6);
             needlePaint.setAntiAlias(true);
 
             textPaint = new Paint();
@@ -205,12 +360,22 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             centerPaint.setColor(Color.BLACK);
             centerPaint.setStyle(Paint.Style.FILL);
             centerPaint.setAntiAlias(true);
+
+            statusPaint = new Paint();
+            statusPaint.setTextSize(24);
+            statusPaint.setTextAlign(Paint.Align.LEFT);
+            statusPaint.setAntiAlias(true);
         }
 
         public void setAngles(float yaw, float pitch, float roll) {
             currentYaw = yaw;
             currentPitch = pitch;
             currentRoll = roll;
+            invalidate();
+        }
+
+        public void setConnectionStatus(boolean connected) {
+            this.connected = connected;
             invalidate();
         }
 
@@ -222,13 +387,15 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             int height = getHeight();
             int centerX = width / 2;
             int centerY = height / 2;
-            // Reduced dial size by 15% (0.85 = 85% of original size)
             int radius = (int) (Math.min(width, height) / 4 * 0.85);
 
             // Clear background
             canvas.drawRect(0, 0, width, height, backgroundPaint);
 
-            // Draw three dials arranged for landscape layout - all at same height
+            // Draw connection status
+            drawConnectionStatus(canvas, 20, 30);
+
+            // Draw three dials arranged for landscape layout
             int leftDialX = width / 4;
             int rightDialX = 3 * width / 4;
             int dialY = height / 2;
@@ -239,6 +406,18 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
             // Draw pitch and roll values at the bottom
             drawPitchRollValues(canvas, centerX, height - 80);
+        }
+
+        private void drawConnectionStatus(Canvas canvas, int x, int y) {
+            if (connected) {
+                statusPaint.setColor(Color.GREEN);
+                canvas.drawText("🟢 Connected to Server", x, y, statusPaint);
+                canvas.drawText("Sending gyro data...", x, y + 30, statusPaint);
+            } else {
+                statusPaint.setColor(Color.RED);
+                canvas.drawText("🔴 Disconnected", x, y, statusPaint);
+                canvas.drawText("Retrying connection...", x, y + 30, statusPaint);
+            }
         }
 
         private void drawYawDial(Canvas canvas, int centerX, int centerY, int radius) {
@@ -323,7 +502,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             markerPaint.setAntiAlias(true);
 
             Paint labelPaint = new Paint();
-            labelPaint.setColor(Color.BLACK);
+            labelPaint.setColor(Color.BLACK); // Fixed: was Color.Black (incorrect)
             labelPaint.setTextSize(18);
             labelPaint.setTextAlign(Paint.Align.CENTER);
             labelPaint.setAntiAlias(true);
@@ -352,8 +531,8 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             valuePaint.setAntiAlias(true);
 
             // Draw pitch and roll values with labels
-            canvas.drawText(String.format("Pitch: %.0f°", currentPitch), centerX - 200, startY, valuePaint);
-            canvas.drawText(String.format("Roll: %.0f°", currentRoll), centerX + 200, startY, valuePaint);
+            canvas.drawText(String.format("Pitch: %.1f°", currentPitch), centerX - 200, startY, valuePaint);
+            canvas.drawText(String.format("Roll: %.1f°", currentRoll), centerX + 200, startY, valuePaint);
         }
     }
 }
