@@ -22,8 +22,14 @@ import io.socket.emitter.Emitter;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.net.URISyntaxException;
 import java.util.Random;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class MainActivity extends AppCompatActivity implements SensorEventListener {
 
@@ -40,39 +46,28 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     // Socket.IO fields
     private Socket socket;
     private static final String SERVER_URL = "http://3.91.244.249:5000/";
+    private static final String RIDER_API_URL = "http://3.91.244.249:5000/get_rider/3";
     private static final String TAG = "GyroSocket";
     private boolean socketConnected = false;
     private long lastSendTime = 0;
     private static final long SEND_INTERVAL = 100; // Send data every 100ms (10 times per second)
 
-    // Fictional rider names
-    private String[] fictionalRiders = {
+    // Rider management
+    private String currentRiderName = "";
+    private String currentAppId = "";
+    private long lastRiderFetchTime = 0;
+    private static final long RIDER_FETCH_INTERVAL = 30000; // Fetch rider every 30 seconds
+    private ExecutorService executorService;
+
+    // Fallback fictional riders (in case API fails)
+    private String[] fallbackRiders = {
             "Lightning McQueen",
             "Speed Racer",
             "Ghost Rider",
             "Easy Rider",
-            "Storm Chaser",
-            "Wind Walker",
-            "Thunder Strike",
-            "Midnight Runner",
-            "Phoenix Rising",
-            "Silver Bullet",
-            "Iron Horse",
-            "Wild Stallion",
-            "Road Warrior",
-            "Velocity Viper",
-            "Sonic Boom",
-            "Nitro Knight",
-            "Blaze Runner",
-            "Steel Thunder",
-            "Quantum Rider",
-            "Neon Flash"
+            "Storm Chaser"
     };
-
     private Random random = new Random();
-    private String currentRiderName = "";
-    private long lastRiderChangeTime = 0;
-    private static final long RIDER_CHANGE_INTERVAL = 30000; // Change rider every 30 seconds
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -80,6 +75,9 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
         // Lock orientation to landscape
         setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+
+        // Initialize executor service for API calls
+        executorService = Executors.newSingleThreadExecutor();
 
         // Initialize sensors
         initializeSensors();
@@ -92,8 +90,86 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         setContentView(dialView);
         dialActive = true;
 
+        // Fetch initial rider data
+        fetchRiderFromAPI();
+
         // Auto-connect to server
         connectToServer();
+    }
+
+    private void fetchRiderFromAPI() {
+        executorService.execute(() -> {
+            try {
+                Log.d(TAG, "Fetching rider from API: " + RIDER_API_URL);
+
+                URL url = new URL(RIDER_API_URL);
+                HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+                connection.setRequestMethod("GET");
+                connection.setConnectTimeout(5000); // 5 second timeout
+                connection.setReadTimeout(5000);
+
+                int responseCode = connection.getResponseCode();
+                if (responseCode == HttpURLConnection.HTTP_OK) {
+                    BufferedReader reader = new BufferedReader(new InputStreamReader(connection.getInputStream()));
+                    StringBuilder response = new StringBuilder();
+                    String line;
+
+                    while ((line = reader.readLine()) != null) {
+                        response.append(line);
+                    }
+                    reader.close();
+
+                    // Parse JSON response
+                    JSONObject jsonResponse = new JSONObject(response.toString());
+                    String appId = jsonResponse.optString("appId", "");
+                    String rider = jsonResponse.optString("rider", "");
+
+                    // Update on main thread
+                    runOnUiThread(() -> {
+                        if (!rider.isEmpty()) {
+                            currentRiderName = rider;
+                            currentAppId = appId;
+                            lastRiderFetchTime = System.currentTimeMillis();
+                            Log.d(TAG, "✓ Fetched rider from API: " + rider + " (" + appId + ")");
+
+                            if (dialView != null) {
+                                dialView.invalidate(); // Refresh UI
+                            }
+                        } else {
+                            Log.w(TAG, "Empty rider name from API, using fallback");
+                            useFallbackRider();
+                        }
+                    });
+
+                } else {
+                    Log.e(TAG, "API request failed with code: " + responseCode);
+                    runOnUiThread(() -> useFallbackRider());
+                }
+
+                connection.disconnect();
+
+            } catch (Exception e) {
+                Log.e(TAG, "Error fetching rider from API", e);
+                runOnUiThread(() -> useFallbackRider());
+            }
+        });
+    }
+
+    private void useFallbackRider() {
+        if (currentRiderName.isEmpty()) {
+            currentRiderName = fallbackRiders[random.nextInt(fallbackRiders.length)];
+            currentAppId = "fallback_rider";
+            Log.d(TAG, "Using fallback rider: " + currentRiderName);
+        }
+    }
+
+    private void checkAndUpdateRider() {
+        long currentTime = System.currentTimeMillis();
+
+        // Fetch new rider data every 30 seconds or if current rider is empty
+        if (currentRiderName.isEmpty() || (currentTime - lastRiderFetchTime > RIDER_FETCH_INTERVAL)) {
+            fetchRiderFromAPI();
+        }
     }
 
     private void initializeSensors() {
@@ -201,11 +277,12 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         }
         lastSendTime = currentTime;
 
-        // Change rider name every 30 seconds or if it's empty
-        if (currentRiderName.isEmpty() || (currentTime - lastRiderChangeTime > RIDER_CHANGE_INTERVAL)) {
-            currentRiderName = fictionalRiders[random.nextInt(fictionalRiders.length)];
-            lastRiderChangeTime = currentTime;
-            Log.d(TAG, "Switched to rider: " + currentRiderName);
+        // Check if we need to update rider info
+        checkAndUpdateRider();
+
+        // Ensure we have a rider name (use fallback if needed)
+        if (currentRiderName.isEmpty()) {
+            useFallbackRider();
         }
 
         try {
@@ -214,7 +291,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             attitudeData.put("yaw", Math.round(currentYaw * 10.0) / 10.0);
             attitudeData.put("roll", Math.round(currentRoll * 10.0) / 10.0);
             attitudeData.put("rider", "gyro_app");
-            attitudeData.put("riderDisplayName", currentRiderName); // Use fictional rider name
+            attitudeData.put("riderDisplayName", currentRiderName); // Use API-fetched rider name
 
             socket.emit("attitude_update", attitudeData);
 
@@ -304,6 +381,8 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         if (socket != null && !socket.connected()) {
             connectToServer();
         }
+        // Refresh rider data when app resumes
+        fetchRiderFromAPI();
     }
 
     @Override
@@ -320,6 +399,9 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         if (socket != null) {
             socket.disconnect();
             Log.d(TAG, "Socket disconnected in onDestroy");
+        }
+        if (executorService != null) {
+            executorService.shutdown();
         }
     }
 
@@ -464,7 +546,11 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             statusPaint.setColor(Color.BLUE);
             statusPaint.setTextSize(20);
             if (!currentRiderName.isEmpty()) {
-                canvas.drawText("Current Rider: " + currentRiderName, x, y, statusPaint);
+                String displayText = "Current Rider: " + currentRiderName;
+                if (!currentAppId.isEmpty() && !currentAppId.equals("fallback_rider")) {
+                    displayText += " (" + currentAppId + ")";
+                }
+                canvas.drawText(displayText, x, y, statusPaint);
             }
             statusPaint.setTextSize(24); // Reset to original size
         }
