@@ -23,6 +23,7 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.net.URISyntaxException;
+import java.util.Random;
 
 public class MainActivity extends AppCompatActivity implements SensorEventListener {
 
@@ -43,6 +44,35 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     private boolean socketConnected = false;
     private long lastSendTime = 0;
     private static final long SEND_INTERVAL = 100; // Send data every 100ms (10 times per second)
+
+    // Fictional rider names
+    private String[] fictionalRiders = {
+            "Lightning McQueen",
+            "Speed Racer",
+            "Ghost Rider",
+            "Easy Rider",
+            "Storm Chaser",
+            "Wind Walker",
+            "Thunder Strike",
+            "Midnight Runner",
+            "Phoenix Rising",
+            "Silver Bullet",
+            "Iron Horse",
+            "Wild Stallion",
+            "Road Warrior",
+            "Velocity Viper",
+            "Sonic Boom",
+            "Nitro Knight",
+            "Blaze Runner",
+            "Steel Thunder",
+            "Quantum Rider",
+            "Neon Flash"
+    };
+
+    private Random random = new Random();
+    private String currentRiderName = "";
+    private long lastRiderChangeTime = 0;
+    private static final long RIDER_CHANGE_INTERVAL = 30000; // Change rider every 30 seconds
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -171,20 +201,27 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         }
         lastSendTime = currentTime;
 
+        // Change rider name every 30 seconds or if it's empty
+        if (currentRiderName.isEmpty() || (currentTime - lastRiderChangeTime > RIDER_CHANGE_INTERVAL)) {
+            currentRiderName = fictionalRiders[random.nextInt(fictionalRiders.length)];
+            lastRiderChangeTime = currentTime;
+            Log.d(TAG, "Switched to rider: " + currentRiderName);
+        }
+
         try {
             JSONObject attitudeData = new JSONObject();
             attitudeData.put("pitch", Math.round(currentPitch * 10.0) / 10.0); // Round to 1 decimal place
             attitudeData.put("yaw", Math.round(currentYaw * 10.0) / 10.0);
             attitudeData.put("roll", Math.round(currentRoll * 10.0) / 10.0);
             attitudeData.put("rider", "gyro_app");
-            attitudeData.put("riderDisplayName", "Android Gyro");
+            attitudeData.put("riderDisplayName", currentRiderName); // Use fictional rider name
 
             socket.emit("attitude_update", attitudeData);
 
             // Log every 1 second (10 sends) to avoid spam
             if (currentTime % 1000 < SEND_INTERVAL) {
-                Log.d(TAG, String.format("Sent: P=%.1f°, Y=%.1f°, R=%.1f°",
-                        currentPitch, currentYaw, currentRoll));
+                Log.d(TAG, String.format("Sent [%s]: P=%.1f°, Y=%.1f°, R=%.1f°",
+                        currentRiderName, currentPitch, currentYaw, currentRoll));
             }
 
         } catch (JSONException e) {
@@ -395,6 +432,9 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             // Draw connection status
             drawConnectionStatus(canvas, 20, 30);
 
+            // Draw current rider name
+            drawCurrentRider(canvas, 20, height - 60);
+
             // Draw three dials arranged for landscape layout
             int leftDialX = width / 4;
             int rightDialX = 3 * width / 4;
@@ -411,13 +451,22 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         private void drawConnectionStatus(Canvas canvas, int x, int y) {
             if (connected) {
                 statusPaint.setColor(Color.GREEN);
-                canvas.drawText("🟢 Connected to Server", x, y, statusPaint);
+                canvas.drawText("Connected to Server", x, y, statusPaint);
                 canvas.drawText("Sending gyro data...", x, y + 30, statusPaint);
             } else {
                 statusPaint.setColor(Color.RED);
-                canvas.drawText("🔴 Disconnected", x, y, statusPaint);
+                canvas.drawText("Disconnected", x, y, statusPaint);
                 canvas.drawText("Retrying connection...", x, y + 30, statusPaint);
             }
+        }
+
+        private void drawCurrentRider(Canvas canvas, int x, int y) {
+            statusPaint.setColor(Color.BLUE);
+            statusPaint.setTextSize(20);
+            if (!currentRiderName.isEmpty()) {
+                canvas.drawText("Current Rider: " + currentRiderName, x, y, statusPaint);
+            }
+            statusPaint.setTextSize(24); // Reset to original size
         }
 
         private void drawYawDial(Canvas canvas, int centerX, int centerY, int radius) {
@@ -502,7 +551,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             markerPaint.setAntiAlias(true);
 
             Paint labelPaint = new Paint();
-            labelPaint.setColor(Color.BLACK); // Fixed: was Color.Black (incorrect)
+            labelPaint.setColor(Color.BLACK);
             labelPaint.setTextSize(18);
             labelPaint.setTextAlign(Paint.Align.CENTER);
             labelPaint.setAntiAlias(true);
