@@ -31,10 +31,16 @@ import java.util.Random;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import android.provider.Settings;
+import android.content.SharedPreferences;
+import java.util.UUID;
+
+
 
 public class MainActivity extends AppCompatActivity implements SensorEventListener {
 
 
+    private String deviceId;
+    private String riderName;
 
     // Sensor-related fields
     private SensorManager sensorManager;
@@ -76,9 +82,24 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        // Generate a unique device ID
-        String deviceId = Settings.Secure.getString(getContentResolver(), Settings.Secure.ANDROID_ID);
+        SharedPreferences prefs = getSharedPreferences("app_prefs", MODE_PRIVATE);
+
+        // --- Device ID ---
+        deviceId = prefs.getString("device_id", null);
+        if (deviceId == null) {
+            deviceId = UUID.randomUUID().toString();
+            prefs.edit().putString("device_id", deviceId).apply();
+        }
         Log.d("DeviceID", deviceId);
+
+        // --- Rider Name ---
+        riderName = prefs.getString("rider_name", null);
+        if (riderName == null) {
+            // Set a default rider name first time
+            riderName = "New Rider";  // You can choose any default
+            prefs.edit().putString("rider_name", riderName).apply();
+        }
+        Log.d("RiderName", riderName);
 
         // Hide the ActionBar
         if (getSupportActionBar() != null) {
