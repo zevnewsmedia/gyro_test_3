@@ -99,6 +99,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             riderName = "New Rider";  // You can choose any default
             prefs.edit().putString("rider_name", riderName).apply();
         }
+        //rider name
         Log.d("RiderName", riderName);
 
         // Hide the ActionBar
