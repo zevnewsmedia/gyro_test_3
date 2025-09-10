@@ -33,6 +33,9 @@ import java.util.concurrent.Executors;
 import android.provider.Settings;
 import android.content.SharedPreferences;
 import java.util.UUID;
+import androidx.appcompat.app.AlertDialog;
+import android.widget.EditText;
+import android.text.InputType;
 
 
 
@@ -83,24 +86,56 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         super.onCreate(savedInstanceState);
 
         SharedPreferences prefs = getSharedPreferences("app_prefs", MODE_PRIVATE);
+        // Optional: Clear previous rider name for testing
+         prefs.edit().remove("rider_name").apply();
 
         // --- Device ID ---
         deviceId = prefs.getString("device_id", null);
         if (deviceId == null) {
+            // Generate new UUID if none exists
             deviceId = UUID.randomUUID().toString();
             prefs.edit().putString("device_id", deviceId).apply();
         }
-        Log.d("DeviceID", deviceId);
 
         // --- Rider Name ---
         riderName = prefs.getString("rider_name", null);
         if (riderName == null) {
-            // Set a default rider name first time
-            riderName = "New Rider";  // You can choose any default
-            prefs.edit().putString("rider_name", riderName).apply();
+            // Show a dialog to ask the user for their name
+            AlertDialog.Builder builder = new AlertDialog.Builder(this);
+            builder.setTitle("Enter your name");
+
+            final EditText input = new EditText(this);
+            input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PERSON_NAME);
+            builder.setView(input);
+
+            builder.setPositiveButton("OK", (dialog, which) -> {
+                String name = input.getText().toString().trim();
+                if (!name.isEmpty()) {
+                    riderName = name;
+                } else {
+                    riderName = "New Rider"; // fallback
+                }
+                prefs.edit().putString("rider_name", riderName).apply();
+
+                Log.d("RiderName", riderName);
+                Log.d("DeviceID", deviceId);
+            });
+
+            builder.setNegativeButton("Cancel", (dialog, which) -> {
+                dialog.cancel();
+                riderName = "New Rider"; // fallback
+                prefs.edit().putString("rider_name", riderName).apply();
+
+                Log.d("RiderName", riderName);
+                Log.d("DeviceID", deviceId);
+            });
+
+            builder.show();
+        } else {
+            // Rider already stored
+            Log.d("RiderName", riderName);
+            Log.d("DeviceID", deviceId);
         }
-        //rider name
-        Log.d("RiderName", riderName);
 
         // Hide the ActionBar
         if (getSupportActionBar() != null) {
