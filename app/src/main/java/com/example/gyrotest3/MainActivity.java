@@ -504,6 +504,21 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             invalidate();
         }
 
+        private void drawTopRiderPitch(Canvas canvas, int width) {
+            Paint topPaint = new Paint();
+            topPaint.setColor(Color.BLUE);
+            topPaint.setTextSize(36); // Adjust size if needed
+            topPaint.setTextAlign(Paint.Align.CENTER);
+            topPaint.setAntiAlias(true);
+
+            String text = currentRiderName.isEmpty() ? "No Rider" : currentRiderName;
+            text += " - Pitch: " + Math.round(currentPitch) + "°";
+
+            // Draw at top with padding
+            canvas.drawText(text, width / 2, 40, topPaint);
+        }
+
+
         @Override
         protected void onDraw(Canvas canvas) {
             super.onDraw(canvas);
@@ -517,16 +532,16 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             // Clear background
             canvas.drawRect(0, 0, width, height, backgroundPaint);
 
-            // Draw connection status
-            drawConnectionStatus(canvas, 20, 30);
+            // Draw current rider + pitch at the very top, centered
+            drawTopRiderPitch(canvas, width);
 
-            // Draw current rider name
-            drawCurrentRider(canvas, 20, height - 60);
+            // Draw connection status below the top label
+            drawConnectionStatus(canvas, 20, 80);
 
             // Draw three dials arranged for landscape layout
             int leftDialX = width / 4;
             int rightDialX = 3 * width / 4;
-            int dialY = height / 2;
+            int dialY = centerY;
 
             drawYawDial(canvas, leftDialX, dialY, radius);
             drawPitchDial(canvas, rightDialX, dialY, radius);
@@ -535,6 +550,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             // Draw pitch and roll values at the bottom
             drawPitchRollValues(canvas, centerX, height - 80);
         }
+
 
         private void drawConnectionStatus(Canvas canvas, int x, int y) {
             if (connected) {
