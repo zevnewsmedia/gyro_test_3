@@ -532,8 +532,8 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             // Clear background
             canvas.drawRect(0, 0, width, height, backgroundPaint);
 
-            // Draw current rider + pitch at the very top, centered
-            drawTopRiderPitch(canvas, width);
+            // Draw current rider name at the very top, centered
+            drawTopRider(canvas, width);
 
             // Draw connection status below the top label
             drawConnectionStatus(canvas, 20, 80);
@@ -550,6 +550,20 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             // Draw pitch and roll values at the bottom
             drawPitchRollValues(canvas, centerX, height - 80);
         }
+
+        // Helper method for top rider name
+        private void drawTopRider(Canvas canvas, int width) {
+            Paint topPaint = new Paint();
+            topPaint.setColor(Color.BLUE);
+            topPaint.setTextSize(40);
+            topPaint.setTextAlign(Paint.Align.CENTER);
+            topPaint.setAntiAlias(true);
+
+            if (!currentRiderName.isEmpty()) {
+                canvas.drawText("Rider: " + currentRiderName, width / 2, 50, topPaint);
+            }
+        }
+
 
 
         private void drawConnectionStatus(Canvas canvas, int x, int y) {
