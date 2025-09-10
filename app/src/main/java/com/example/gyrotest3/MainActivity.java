@@ -30,8 +30,11 @@ import java.net.URISyntaxException;
 import java.util.Random;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import android.provider.Settings;
 
 public class MainActivity extends AppCompatActivity implements SensorEventListener {
+
+
 
     // Sensor-related fields
     private SensorManager sensorManager;
@@ -72,6 +75,10 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+
+        // Generate a unique device ID
+        String deviceId = Settings.Secure.getString(getContentResolver(), Settings.Secure.ANDROID_ID);
+        Log.d("DeviceID", deviceId);
 
         // Hide the ActionBar
         if (getSupportActionBar() != null) {
