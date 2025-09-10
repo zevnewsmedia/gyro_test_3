@@ -671,9 +671,10 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             valuePaint.setTextAlign(Paint.Align.CENTER);
             valuePaint.setAntiAlias(true);
 
-            // Draw pitch and roll values with labels
-            canvas.drawText(String.format("Pitch: %.1f°", currentPitch), centerX - 200, startY, valuePaint);
-            canvas.drawText(String.format("Roll: %.1f°", currentRoll), centerX + 200, startY, valuePaint);
+            // Draw pitch and roll as whole numbers
+            canvas.drawText("Pitch: " + Math.round(currentPitch) + "°", centerX - 200, startY, valuePaint);
+            canvas.drawText("Roll: " + Math.round(currentRoll) + "°", centerX + 200, startY, valuePaint);
         }
+
     }
 }
