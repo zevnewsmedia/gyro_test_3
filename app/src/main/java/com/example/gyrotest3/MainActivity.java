@@ -36,6 +36,12 @@ import androidx.appcompat.app.AlertDialog;
 import android.widget.EditText;
 import android.text.InputType;
 
+// Add these imports at the top of your MainActivity class
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.graphics.drawable.Drawable;
+import androidx.core.content.ContextCompat;
+
 /**
  * MainActivity - Android Gyroscope Data Transmission App
  *
@@ -94,6 +100,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+
 
         initializeDeviceAndRider();
         setupUI();
@@ -523,10 +530,6 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
      * Custom view class for displaying gyroscope data with three circular dials
      * Shows Yaw (not available), Pitch, and Roll with visual indicators
      */
-    /**
-     * Clean progress circle GyroDialView class
-     * Modified to show progress bars starting from center top and extending left and right
-     */
     private class GyroDialView extends View {
 
         // Paint objects for different UI elements
@@ -539,6 +542,9 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         private final Paint titlePaint;
         private final Paint labelPaint;
 
+        // Logo bitmap for header
+        private Bitmap logoBitmap;
+
         private boolean connected = false;
 
         // Colors for each gauge
@@ -550,6 +556,9 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
         public GyroDialView(Context context) {
             super(context);
+
+            // Load the logo bitmap from drawable
+            logoBitmap = BitmapFactory.decodeResource(context.getResources(), R.drawable.logo);
 
             // Initialize all paint objects
             backgroundPaint = createBackgroundPaint();
@@ -667,23 +676,43 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
             // Draw UI elements
             drawHeader(canvas, width);
-            drawConnectionStatus(canvas, 30, 80);
+            drawConnectionStatus(canvas, 30, 120);
             drawCleanProgressCircles(canvas, width, height);
             drawLegend(canvas, width, height);
         }
 
         /**
-         * Draw header with rider name
+         * Draw header with logo and rider name
          */
         private void drawHeader(Canvas canvas, int width) {
+            int currentY = 10; // Start position
+
+            // Draw logo at the top if available
+            if (logoBitmap != null) {
+                int logoWidth = 180;   // Wide logo
+                int logoHeight = 47;  // Shorter height
+
+                // Scale bitmap to desired size
+                Bitmap scaledLogo = Bitmap.createScaledBitmap(logoBitmap, logoWidth, logoHeight, true);
+
+                // Draw logo centered at top
+                int logoX = (width - logoWidth) / 2;
+                canvas.drawBitmap(scaledLogo, logoX, currentY, null);
+
+                currentY += logoHeight + 10; // Move down for next elements
+            }
+
+            // Draw title
             titlePaint.setTextSize(32);
             titlePaint.setColor(Color.rgb(33, 33, 33));
-            canvas.drawText("Gyroscope Data", width / 2, 50, titlePaint);
+            canvas.drawText("Gyroscope Data", width / 2, currentY + 30, titlePaint);
+            currentY += 40;
 
+            // Draw rider name
             if (riderName != null && !riderName.isEmpty()) {
-                textPaint.setTextSize(40);
+                textPaint.setTextSize(20);
                 textPaint.setColor(Color.rgb(158, 158, 158));
-                canvas.drawText("Rider: " + riderName, width / 2, 80, textPaint);
+                canvas.drawText("Rider: " + riderName, width / 2, currentY + 20, textPaint);
             }
         }
 
@@ -705,7 +734,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
          */
         private void drawCleanProgressCircles(Canvas canvas, int width, int height) {
             int circleRadius = Math.min(width / 6, height / 4) - 20;
-            int centerY = height / 2;
+            int centerY = height / 2 + 10; // Moved down slightly to accommodate logo
 
             // Calculate positions for three circles
             int leftX = width / 4;
@@ -742,7 +771,6 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
             // Title above circle
             titlePaint.setTextSize(18);
-            //canvas.drawText("PITCH", centerX, centerY - radius - 20, titlePaint);
             canvas.drawText("TILT (TURNUP)", centerX, centerY - radius - 20, titlePaint);
         }
 
@@ -770,10 +798,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
             // Title above circle
             titlePaint.setTextSize(18);
-            //canvas.drawText("ROLL", centerX, centerY - radius - 20, titlePaint);
-           // canvas.drawText("ROLL", centerX, centerY - radius - 20, titlePaint);
             canvas.drawText("LEAN (TABLE TOP)", centerX, centerY - radius - 20, titlePaint);
-
         }
 
         /**
@@ -796,7 +821,6 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
             // Title above circle
             titlePaint.setTextSize(18);
-            //canvas.drawText("YAW", centerX, centerY - radius - 20, titlePaint);
             canvas.drawText("TURN (TURNDOWN)", centerX, centerY - radius - 20, titlePaint);
         }
 
@@ -851,16 +875,17 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             dotPaint.setColor(gaugeColors[0]);
             //canvas.drawCircle(width / 4 - 60, legendY - 5, 8, dotPaint);
             labelPaint.setColor(Color.rgb(33, 33, 33));
-           // canvas.drawText("pitch", width / 4 - 40, legendY, labelPaint);
+            // canvas.drawText("pitch", width / 4 - 40, legendY, labelPaint);
 
             // Roll legend
             dotPaint.setColor(gaugeColors[1]);
-          //  canvas.drawCircle(width / 2 - 30, legendY - 5, 8, dotPaint);
-          //  canvas.drawText("roll", width / 2 - 10, legendY, labelPaint);
+            //  canvas.drawCircle(width / 2 - 30, legendY - 5, 8, dotPaint);
+            //  canvas.drawText("roll", width / 2 - 10, legendY, labelPaint);
 
             // Yaw legend
             dotPaint.setColor(gaugeColors[2]);
-           // canvas.drawCircle(3 * width / 4 - 30, legendY - 5, 8, dotPaint);
-          //  canvas.drawText("yaw", 3 * width / 4 - 10, legendY, labelPaint);
+            // canvas.drawCircle(3 * width / 4 - 30, legendY - 5, 8, dotPaint);
+            //  canvas.drawText("yaw", 3 * width / 4 - 10, legendY, labelPaint);
         }
-    }}
+    }
+}
