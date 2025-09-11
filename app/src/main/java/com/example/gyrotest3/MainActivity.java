@@ -719,18 +719,21 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         }
 
         /**
-         * Draw pitch progress circle
+         * Draw pitch progress circle - moves left for negative, right for positive
          */
         private void drawPitchCircle(Canvas canvas, int centerX, int centerY, int radius) {
             // Normalize pitch to 0-100% (assuming ±90° range)
             float normalizedPitch = Math.abs(currentPitch) / 90f; // 0.0 to 1.0
             normalizedPitch = Math.min(1.0f, normalizedPitch);
 
-            drawCenterOutProgressCircle(canvas, centerX, centerY, radius, normalizedPitch, gaugeColors[0]);
+            // Determine direction based on sign
+            boolean isPositive = currentPitch >= 0;
 
-            // Draw value and labels
+            drawDirectionalProgressCircle(canvas, centerX, centerY, radius, normalizedPitch, gaugeColors[0], isPositive);
+
+            // Draw value and labels (show actual value with sign)
             valuePaint.setTextSize(48);
-            canvas.drawText(String.format("%.0f", Math.abs(currentPitch)), centerX, centerY + 8, valuePaint);
+            canvas.drawText(String.format("%.0f", currentPitch), centerX, centerY + 8, valuePaint);
 
             textPaint.setTextSize(16);
             canvas.drawText("degrees", centerX, centerY + 30, textPaint);
@@ -743,18 +746,21 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         }
 
         /**
-         * Draw roll progress circle
+         * Draw roll progress circle - moves left for negative, right for positive
          */
         private void drawRollCircle(Canvas canvas, int centerX, int centerY, int radius) {
             // Normalize roll to 0-100% (assuming ±90° range)
             float normalizedRoll = Math.abs(currentRoll) / 90f; // 0.0 to 1.0
             normalizedRoll = Math.min(1.0f, normalizedRoll);
 
-            drawCenterOutProgressCircle(canvas, centerX, centerY, radius, normalizedRoll, gaugeColors[1]);
+            // Determine direction based on sign
+            boolean isPositive = currentRoll >= 0;
 
-            // Draw value and labels
+            drawDirectionalProgressCircle(canvas, centerX, centerY, radius, normalizedRoll, gaugeColors[1], isPositive);
+
+            // Draw value and labels (show actual value with sign)
             valuePaint.setTextSize(48);
-            canvas.drawText(String.format("%.0f", Math.abs(currentRoll)), centerX, centerY + 8, valuePaint);
+            canvas.drawText(String.format("%.0f", currentRoll), centerX, centerY + 8, valuePaint);
 
             textPaint.setTextSize(16);
             canvas.drawText("degrees", centerX, centerY + 30, textPaint);
@@ -771,7 +777,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
          */
         private void drawYawCircle(Canvas canvas, int centerX, int centerY, int radius) {
             // Draw empty circle for yaw (not available)
-            drawCenterOutProgressCircle(canvas, centerX, centerY, radius, 0f, gaugeColors[2]);
+            drawDirectionalProgressCircle(canvas, centerX, centerY, radius, 0f, gaugeColors[2], true);
 
             // Draw N/A text
             valuePaint.setTextSize(36);
@@ -790,34 +796,37 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         }
 
         /**
-         * Draw a progress circle that starts from center top and extends left and right
+         * Draw a progress circle that moves in one direction based on the sign
+         * Positive values go clockwise (right), negative values go counter-clockwise (left)
          */
-        private void drawCenterOutProgressCircle(Canvas canvas, int centerX, int centerY, int radius,
-                                                 float progress, int color) {
+        private void drawDirectionalProgressCircle(Canvas canvas, int centerX, int centerY, int radius,
+                                                   float progress, int color, boolean isPositive) {
 
             // Draw background circle
             canvas.drawCircle(centerX, centerY, radius, backgroundCirclePaint);
 
-            // Draw progress arcs extending from center top
+            // Draw progress arc in one direction based on sign
             if (progress > 0) {
                 progressPaint.setColor(color);
 
-                // Calculate the sweep angle for each side (half the total progress)
-                float halfSweepAngle = (progress * 180f); // Max 180° total (90° each side)
+                // Calculate the sweep angle (max 90° in one direction)
+                float sweepAngle = progress * 90f; // Max 90° in one direction
 
-                // Draw left arc (from top going counter-clockwise)
-                canvas.drawArc(
-                        centerX - radius, centerY - radius,
-                        centerX + radius, centerY + radius,
-                        -90 - halfSweepAngle / 2, halfSweepAngle / 2, false, progressPaint
-                );
-
-                // Draw right arc (from top going clockwise)
-                canvas.drawArc(
-                        centerX - radius, centerY - radius,
-                        centerX + radius, centerY + radius,
-                        -90, halfSweepAngle / 2, false, progressPaint
-                );
+                if (isPositive) {
+                    // Positive: draw arc from top going clockwise (to the right)
+                    canvas.drawArc(
+                            centerX - radius, centerY - radius,
+                            centerX + radius, centerY + radius,
+                            -90, sweepAngle, false, progressPaint
+                    );
+                } else {
+                    // Negative: draw arc from top going counter-clockwise (to the left)
+                    canvas.drawArc(
+                            centerX - radius, centerY - radius,
+                            centerX + radius, centerY + radius,
+                            -90 - sweepAngle, sweepAngle, false, progressPaint
+                    );
+                }
             }
         }
 
