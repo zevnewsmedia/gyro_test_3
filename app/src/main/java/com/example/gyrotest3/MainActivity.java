@@ -689,8 +689,8 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
             // Draw logo at the top if available
             if (logoBitmap != null) {
-                int logoWidth = 180;   // Wide logo
-                int logoHeight = 47;  // Shorter height
+                int logoWidth = 360;   // Wide logo
+                int logoHeight = 94;  // Shorter height
 
                 // Scale bitmap to desired size
                 Bitmap scaledLogo = Bitmap.createScaledBitmap(logoBitmap, logoWidth, logoHeight, true);
@@ -705,12 +705,12 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             // Draw title
             titlePaint.setTextSize(32);
             titlePaint.setColor(Color.rgb(33, 33, 33));
-            canvas.drawText("Gyroscope Data", width / 2, currentY + 30, titlePaint);
+          //  canvas.drawText("Gyroscope Data", width / 2, currentY + 30, titlePaint);
             currentY += 40;
 
             // Draw rider name
             if (riderName != null && !riderName.isEmpty()) {
-                textPaint.setTextSize(20);
+                textPaint.setTextSize(120);
                 textPaint.setColor(Color.rgb(158, 158, 158));
                 canvas.drawText("Rider: " + riderName, width / 2, currentY + 20, textPaint);
             }
