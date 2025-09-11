@@ -523,33 +523,48 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
      * Custom view class for displaying gyroscope data with three circular dials
      * Shows Yaw (not available), Pitch, and Roll with visual indicators
      */
+    /**
+     * Clean progress circle GyroDialView class
+     * Modified to show progress bars starting from center top and extending left and right
+     */
     private class GyroDialView extends View {
 
         // Paint objects for different UI elements
-        private final Paint dialPaint;
-        private final Paint needlePaint;
-        private final Paint textPaint;
-        private final Paint centerPaint;
         private final Paint backgroundPaint;
+        private final Paint backgroundCirclePaint;
+        private final Paint progressPaint;
+        private final Paint textPaint;
+        private final Paint valuePaint;
         private final Paint statusPaint;
+        private final Paint titlePaint;
+        private final Paint labelPaint;
 
         private boolean connected = false;
+
+        // Colors for each gauge
+        private final int[] gaugeColors = {
+                Color.rgb(33, 150, 243),   // Blue for Pitch
+                Color.rgb(255, 193, 7),    // Amber/Yellow for Roll
+                Color.rgb(158, 158, 158)   // Gray for YAW (N/A)
+        };
 
         public GyroDialView(Context context) {
             super(context);
 
             // Initialize all paint objects
             backgroundPaint = createBackgroundPaint();
-            dialPaint = createDialPaint();
-            needlePaint = createNeedlePaint();
+            backgroundCirclePaint = createBackgroundCirclePaint();
+            progressPaint = createProgressPaint();
             textPaint = createTextPaint();
-            centerPaint = createCenterPaint();
+            valuePaint = createValuePaint();
             statusPaint = createStatusPaint();
+            titlePaint = createTitlePaint();
+            labelPaint = createLabelPaint();
 
             setBackgroundColor(Color.WHITE);
         }
 
-        // Paint factory methods for cleaner initialization
+        // Paint factory methods
         private Paint createBackgroundPaint() {
             Paint paint = new Paint();
             paint.setColor(Color.WHITE);
@@ -557,44 +572,67 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             return paint;
         }
 
-        private Paint createDialPaint() {
+        private Paint createBackgroundCirclePaint() {
             Paint paint = new Paint();
-            paint.setColor(Color.GRAY);
+            paint.setColor(Color.rgb(230, 230, 230)); // Light gray background circle
             paint.setStyle(Paint.Style.STROKE);
-            paint.setStrokeWidth(8);
+            paint.setStrokeWidth(20);
+            paint.setStrokeCap(Paint.Cap.ROUND);
             paint.setAntiAlias(true);
             return paint;
         }
 
-        private Paint createNeedlePaint() {
+        private Paint createProgressPaint() {
             Paint paint = new Paint();
-            paint.setColor(Color.RED);
-            paint.setStrokeWidth(6);
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(20);
+            paint.setStrokeCap(Paint.Cap.ROUND);
             paint.setAntiAlias(true);
             return paint;
         }
 
         private Paint createTextPaint() {
             Paint paint = new Paint();
-            paint.setColor(Color.BLACK);
-            paint.setTextSize(48);
+            paint.setColor(Color.rgb(158, 158, 158));
+            paint.setTextSize(24);
             paint.setTextAlign(Paint.Align.CENTER);
             paint.setAntiAlias(true);
             return paint;
         }
 
-        private Paint createCenterPaint() {
+        private Paint createValuePaint() {
             Paint paint = new Paint();
-            paint.setColor(Color.BLACK);
-            paint.setStyle(Paint.Style.FILL);
+            paint.setColor(Color.rgb(33, 33, 33));
+            paint.setTextSize(64);
+            paint.setTextAlign(Paint.Align.CENTER);
             paint.setAntiAlias(true);
+            paint.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
             return paint;
         }
 
         private Paint createStatusPaint() {
             Paint paint = new Paint();
-            paint.setTextSize(24);
+            paint.setTextSize(20);
             paint.setTextAlign(Paint.Align.LEFT);
+            paint.setAntiAlias(true);
+            return paint;
+        }
+
+        private Paint createTitlePaint() {
+            Paint paint = new Paint();
+            paint.setColor(Color.rgb(33, 33, 33));
+            paint.setTextSize(28);
+            paint.setTextAlign(Paint.Align.CENTER);
+            paint.setAntiAlias(true);
+            paint.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+            return paint;
+        }
+
+        private Paint createLabelPaint() {
+            Paint paint = new Paint();
+            paint.setColor(Color.rgb(158, 158, 158));
+            paint.setTextSize(18);
+            paint.setTextAlign(Paint.Align.CENTER);
             paint.setAntiAlias(true);
             return paint;
         }
@@ -623,245 +661,192 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
             int width = getWidth();
             int height = getHeight();
-            int centerX = width / 2;
-            int centerY = height / 2;
-            int radius = (int) (Math.min(width, height) / 4 * 0.85);
 
             // Clear background
             canvas.drawRect(0, 0, width, height, backgroundPaint);
 
-            // Draw UI elements from top to bottom
-            drawRiderInformation(canvas, width);
-            drawConnectionStatus(canvas, 20, 170);
-            drawThreeDials(canvas, width, centerY, radius);
-            drawPitchRollValues(canvas, centerX, height - 80);
+            // Draw UI elements
+            drawHeader(canvas, width);
+            drawConnectionStatus(canvas, 30, 80);
+            drawCleanProgressCircles(canvas, width, height);
+            drawLegend(canvas, width, height);
         }
 
         /**
-         * Draw rider information at the top
+         * Draw header with rider name
          */
-        private void drawRiderInformation(Canvas canvas, int width) {
-            // Display the user's rider name
+        private void drawHeader(Canvas canvas, int width) {
+            titlePaint.setTextSize(32);
+            titlePaint.setColor(Color.rgb(33, 33, 33));
+            canvas.drawText("Gyroscope Data", width / 2, 50, titlePaint);
+
             if (riderName != null && !riderName.isEmpty()) {
-                Paint riderPaint = createRiderNamePaint(Color.BLUE, 40);
-                canvas.drawText("Rider on Course: " + riderName, width / 2, 50, riderPaint);
+                textPaint.setTextSize(20);
+                textPaint.setColor(Color.rgb(158, 158, 158));
+                canvas.drawText("Rider: " + riderName, width / 2, 80, textPaint);
             }
         }
 
         /**
-         * Create paint for rider name display
-         */
-        private Paint createRiderNamePaint(int color, int textSize) {
-            Paint paint = new Paint();
-            paint.setColor(color);
-            paint.setTextSize(textSize);
-            paint.setTextAlign(Paint.Align.CENTER);
-            paint.setAntiAlias(true);
-            return paint;
-        }
-
-        /**
-         * Draw connection status indicator
+         * Draw connection status
          */
         private void drawConnectionStatus(Canvas canvas, int x, int y) {
             if (connected) {
-                statusPaint.setColor(Color.GREEN);
-                canvas.drawText("Connected to Server", x, y, statusPaint);
-                canvas.drawText("Sending gyro data...", x, y + 30, statusPaint);
+                statusPaint.setColor(Color.rgb(76, 175, 80));
+                canvas.drawText("● Connected", x, y, statusPaint);
             } else {
-                statusPaint.setColor(Color.RED);
-                canvas.drawText("Disconnected", x, y, statusPaint);
-                canvas.drawText("Retrying connection...", x, y + 30, statusPaint);
+                statusPaint.setColor(Color.rgb(244, 67, 54));
+                canvas.drawText("● Disconnected", x, y, statusPaint);
             }
         }
 
         /**
-         * Draw three dials arranged for landscape layout
+         * Draw three clean progress circles
          */
-        private void drawThreeDials(Canvas canvas, int width, int centerY, int radius) {
-            int leftDialX = width / 4;
-            int rightDialX = 3 * width / 4;
+        private void drawCleanProgressCircles(Canvas canvas, int width, int height) {
+            int circleRadius = Math.min(width / 6, height / 4) - 20;
+            int centerY = height / 2;
+
+            // Calculate positions for three circles
+            int leftX = width / 4;
             int centerX = width / 2;
+            int rightX = 3 * width / 4;
 
-            drawYawDial(canvas, leftDialX, centerY, radius);
-            drawPitchDial(canvas, rightDialX, centerY, radius);
-            drawRollDial(canvas, centerX, centerY, radius);
+            // Draw circles
+            drawPitchCircle(canvas, leftX, centerY, circleRadius);
+            drawRollCircle(canvas, centerX, centerY, circleRadius);
+            drawYawCircle(canvas, rightX, centerY, circleRadius);
         }
 
         /**
-         * Draw yaw dial (shows N/A since accelerometer can't measure yaw)
+         * Draw pitch progress circle
          */
-        private void drawYawDial(Canvas canvas, int centerX, int centerY, int radius) {
-            canvas.drawCircle(centerX, centerY, radius, dialPaint);
+        private void drawPitchCircle(Canvas canvas, int centerX, int centerY, int radius) {
+            // Normalize pitch to 0-100% (assuming ±90° range)
+            float normalizedPitch = Math.abs(currentPitch) / 90f; // 0.0 to 1.0
+            normalizedPitch = Math.min(1.0f, normalizedPitch);
 
-            // Draw X pattern to indicate unavailable
-            Paint unavailablePaint = new Paint();
-            unavailablePaint.setColor(Color.GRAY);
-            unavailablePaint.setStrokeWidth(6);
-            unavailablePaint.setAntiAlias(true);
+            drawCenterOutProgressCircle(canvas, centerX, centerY, radius, normalizedPitch, gaugeColors[0]);
 
-            int halfRadius = radius / 2;
-            canvas.drawLine(centerX - halfRadius, centerY - halfRadius,
-                    centerX + halfRadius, centerY + halfRadius, unavailablePaint);
-            canvas.drawLine(centerX + halfRadius, centerY - halfRadius,
-                    centerX - halfRadius, centerY + halfRadius, unavailablePaint);
+            // Draw value and labels
+            valuePaint.setTextSize(48);
+            canvas.drawText(String.format("%.0f", Math.abs(currentPitch)), centerX, centerY + 8, valuePaint);
 
-            drawDialLabel(canvas, centerX, centerY, radius, "YAW", "(N/A)");
+            textPaint.setTextSize(16);
+            canvas.drawText("degrees", centerX, centerY + 30, textPaint);
+            textPaint.setTextSize(14);
+            canvas.drawText("Range: ±90°", centerX, centerY + 50, textPaint);
+
+            // Title above circle
+            titlePaint.setTextSize(18);
+            canvas.drawText("PITCH", centerX, centerY - radius - 20, titlePaint);
         }
 
         /**
-         * Draw pitch dial with needle indicator
+         * Draw roll progress circle
          */
-        private void drawPitchDial(Canvas canvas, int centerX, int centerY, int radius) {
-            canvas.drawCircle(centerX, centerY, radius, dialPaint);
-            drawPitchMarkers(canvas, centerX, centerY, radius);
-            drawNeedle(canvas, centerX, centerY, radius, currentPitch);
-            drawDialLabel(canvas, centerX, centerY, radius, "PITCH", null);
+        private void drawRollCircle(Canvas canvas, int centerX, int centerY, int radius) {
+            // Normalize roll to 0-100% (assuming ±90° range)
+            float normalizedRoll = Math.abs(currentRoll) / 90f; // 0.0 to 1.0
+            normalizedRoll = Math.min(1.0f, normalizedRoll);
+
+            drawCenterOutProgressCircle(canvas, centerX, centerY, radius, normalizedRoll, gaugeColors[1]);
+
+            // Draw value and labels
+            valuePaint.setTextSize(48);
+            canvas.drawText(String.format("%.0f", Math.abs(currentRoll)), centerX, centerY + 8, valuePaint);
+
+            textPaint.setTextSize(16);
+            canvas.drawText("degrees", centerX, centerY + 30, textPaint);
+            textPaint.setTextSize(14);
+            canvas.drawText("Range: ±90°", centerX, centerY + 50, textPaint);
+
+            // Title above circle
+            titlePaint.setTextSize(18);
+            canvas.drawText("ROLL", centerX, centerY - radius - 20, titlePaint);
         }
 
         /**
-         * Draw roll dial with needle indicator
+         * Draw yaw circle (shows N/A)
          */
-        private void drawRollDial(Canvas canvas, int centerX, int centerY, int radius) {
-            canvas.drawCircle(centerX, centerY, radius, dialPaint);
-            drawRollMarkers(canvas, centerX, centerY, radius);
-            drawNeedle(canvas, centerX, centerY, radius, currentRoll);
-            drawDialLabel(canvas, centerX, centerY, radius, "ROLL", null);
+        private void drawYawCircle(Canvas canvas, int centerX, int centerY, int radius) {
+            // Draw empty circle for yaw (not available)
+            drawCenterOutProgressCircle(canvas, centerX, centerY, radius, 0f, gaugeColors[2]);
+
+            // Draw N/A text
+            valuePaint.setTextSize(36);
+            valuePaint.setColor(Color.rgb(158, 158, 158));
+            canvas.drawText("N/A", centerX, centerY + 8, valuePaint);
+
+            textPaint.setTextSize(14);
+            canvas.drawText("Magnetometer", centerX, centerY + 30, textPaint);
+            canvas.drawText("Required", centerX, centerY + 48, textPaint);
+
+            valuePaint.setColor(Color.rgb(33, 33, 33)); // Reset color
+
+            // Title above circle
+            titlePaint.setTextSize(18);
+            canvas.drawText("YAW", centerX, centerY - radius - 20, titlePaint);
         }
 
         /**
-         * Draw dial label and optional subtitle
+         * Draw a progress circle that starts from center top and extends left and right
          */
-        private void drawDialLabel(Canvas canvas, int centerX, int centerY, int radius,
-                                   String label, String subtitle) {
-            textPaint.setTextSize(24);
-            canvas.drawText(label, centerX, centerY - radius - 30, textPaint);
+        private void drawCenterOutProgressCircle(Canvas canvas, int centerX, int centerY, int radius,
+                                                 float progress, int color) {
 
-            if (subtitle != null) {
-                textPaint.setTextSize(18);
-                canvas.drawText(subtitle, centerX, centerY - radius - 8, textPaint);
+            // Draw background circle
+            canvas.drawCircle(centerX, centerY, radius, backgroundCirclePaint);
+
+            // Draw progress arcs extending from center top
+            if (progress > 0) {
+                progressPaint.setColor(color);
+
+                // Calculate the sweep angle for each side (half the total progress)
+                float halfSweepAngle = (progress * 180f); // Max 180° total (90° each side)
+
+                // Draw left arc (from top going counter-clockwise)
+                canvas.drawArc(
+                        centerX - radius, centerY - radius,
+                        centerX + radius, centerY + radius,
+                        -90 - halfSweepAngle / 2, halfSweepAngle / 2, false, progressPaint
+                );
+
+                // Draw right arc (from top going clockwise)
+                canvas.drawArc(
+                        centerX - radius, centerY - radius,
+                        centerX + radius, centerY + radius,
+                        -90, halfSweepAngle / 2, false, progressPaint
+                );
             }
         }
 
         /**
-         * Draw needle indicator on dial
+         * Draw legend at bottom
          */
-        private void drawNeedle(Canvas canvas, int centerX, int centerY, int radius, float angle) {
-            float angleRad = (float) Math.toRadians(angle);
-            float needleLength = radius - 20;
-            float needleX = centerX + needleLength * (float) Math.sin(angleRad);
-            float needleY = centerY - needleLength * (float) Math.cos(angleRad);
+        private void drawLegend(Canvas canvas, int width, int height) {
+            int legendY = height - 60;
+            int legendSpacing = width / 3;
 
-            canvas.drawLine(centerX, centerY, needleX, needleY, needlePaint);
-            canvas.drawCircle(centerX, centerY, 10, centerPaint);
+            // Draw colored dots and labels
+            Paint dotPaint = new Paint();
+            dotPaint.setStyle(Paint.Style.FILL);
+            dotPaint.setAntiAlias(true);
+
+            // Pitch legend
+            dotPaint.setColor(gaugeColors[0]);
+            canvas.drawCircle(width / 4 - 60, legendY - 5, 8, dotPaint);
+            labelPaint.setColor(Color.rgb(33, 33, 33));
+            canvas.drawText("pitch", width / 4 - 40, legendY, labelPaint);
+
+            // Roll legend
+            dotPaint.setColor(gaugeColors[1]);
+            canvas.drawCircle(width / 2 - 30, legendY - 5, 8, dotPaint);
+            canvas.drawText("roll", width / 2 - 10, legendY, labelPaint);
+
+            // Yaw legend
+            dotPaint.setColor(gaugeColors[2]);
+            canvas.drawCircle(3 * width / 4 - 30, legendY - 5, 8, dotPaint);
+            canvas.drawText("yaw", 3 * width / 4 - 10, legendY, labelPaint);
         }
-
-        /**
-         * Draw pitch markers with directional labels (Up, Right, Down, Left)
-         */
-        private void drawPitchMarkers(Canvas canvas, int centerX, int centerY, int radius) {
-            Paint markerPaint = createMarkerPaint();
-            Paint labelPaint = createLabelPaint();
-
-            String[] labels = {"U", "R", "D", "L"};
-
-            for (int i = 0; i < 4; i++) {
-                float angle = (float) Math.toRadians(i * 90);
-                drawMarkerLine(canvas, centerX, centerY, radius, angle, markerPaint);
-                drawMarkerLabel(canvas, centerX, centerY, radius, angle, labels[i], labelPaint);
-            }
-        }
-
-        /**
-         * Draw roll markers with degree labels (0, 90, 180, 270)
-         */
-        private void drawRollMarkers(Canvas canvas, int centerX, int centerY, int radius) {
-            Paint markerPaint = createMarkerPaint();
-            Paint labelPaint = createLabelPaint();
-
-            String[] labels = {"0", "90", "180", "270"};
-
-            for (int i = 0; i < 4; i++) {
-                float angle = (float) Math.toRadians(i * 90);
-                drawMarkerLine(canvas, centerX, centerY, radius, angle, markerPaint);
-                drawMarkerLabel(canvas, centerX, centerY, radius, angle, labels[i], labelPaint);
-            }
-        }
-
-        /**
-         * Create paint for dial markers
-         */
-        private Paint createMarkerPaint() {
-            Paint paint = new Paint();
-            paint.setColor(Color.BLACK);
-            paint.setStrokeWidth(4);
-            paint.setAntiAlias(true);
-            return paint;
-        }
-
-        /**
-         * Create paint for marker labels
-         */
-        private Paint createLabelPaint() {
-            Paint paint = new Paint();
-            paint.setColor(Color.BLACK);
-            paint.setTextSize(18);
-            paint.setTextAlign(Paint.Align.CENTER);
-            paint.setAntiAlias(true);
-            return paint;
-        }
-
-        /**
-         * Draw marker line on dial circumference
-         */
-        private void drawMarkerLine(Canvas canvas, int centerX, int centerY, int radius,
-                                    float angle, Paint markerPaint) {
-            float innerRadius = radius - 20;
-
-            float x1 = centerX + innerRadius * (float) Math.sin(angle);
-            float y1 = centerY - innerRadius * (float) Math.cos(angle);
-            float x2 = centerX + radius * (float) Math.sin(angle);
-            float y2 = centerY - radius * (float) Math.cos(angle);
-
-            canvas.drawLine(x1, y1, x2, y2, markerPaint);
-        }
-
-        /**
-         * Draw label outside dial circumference
-         */
-        private void drawMarkerLabel(Canvas canvas, int centerX, int centerY, int radius,
-                                     float angle, String label, Paint labelPaint) {
-            float labelRadius = radius + 30;
-            float labelX = centerX + labelRadius * (float) Math.sin(angle);
-            float labelY = centerY - labelRadius * (float) Math.cos(angle) + 8;
-
-            canvas.drawText(label, labelX, labelY, labelPaint);
-        }
-
-        /**
-         * Draw pitch and roll values at the bottom of screen
-         */
-        private void drawPitchRollValues(Canvas canvas, int centerX, int startY) {
-            Paint valuePaint = createValuePaint();
-
-            // Draw pitch and roll as rounded integer values
-            String pitchText = "Pitch: " + Math.round(currentPitch) + "°";
-            String rollText = "Roll: " + Math.round(currentRoll) + "°";
-
-            canvas.drawText(pitchText, centerX - 200, startY, valuePaint);
-            canvas.drawText(rollText, centerX + 200, startY, valuePaint);
-        }
-
-        /**
-         * Create paint for value display
-         */
-        private Paint createValuePaint() {
-            Paint paint = new Paint();
-            paint.setColor(Color.BLACK);
-            paint.setTextSize(32);
-            paint.setTextAlign(Paint.Align.CENTER);
-            paint.setAntiAlias(true);
-            return paint;
-        }
-    }
-}
+    }}
