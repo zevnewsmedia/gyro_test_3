@@ -30,371 +30,267 @@ import java.net.URISyntaxException;
 import java.util.Random;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import android.provider.Settings;
 import android.content.SharedPreferences;
 import java.util.UUID;
 import androidx.appcompat.app.AlertDialog;
 import android.widget.EditText;
 import android.text.InputType;
 
-
-
+/**
+ * MainActivity - Android Gyroscope Data Transmission App
+ *
+ * This application reads accelerometer data, displays it in custom dials,
+ * and transmits the attitude data to a remote server via Socket.IO.
+ *
+ * Features:
+ * - Real-time accelerometer data visualization
+ * - Socket.IO connection for data transmission
+ * - Rider name management with API integration
+ * - Custom dial view for pitch, roll, and yaw display
+ * - Landscape orientation lock
+ */
 public class MainActivity extends AppCompatActivity implements SensorEventListener {
 
+    // ========================================
+    // CONSTANTS
+    // ========================================
+
+    private static final String TAG = "GyroSocket";
+    private static final String SERVER_URL = "http://3.91.244.249:5000/";
+    private static final String RIDER_API_URL = "http://3.91.244.249:5000/get_rider/3";
+    private static final long SEND_INTERVAL = 100; // Send data every 100ms (10Hz)
+    private static final long RIDER_FETCH_INTERVAL = 30000; // Fetch rider every 30 seconds
+
+    // ========================================
+    // DEVICE & USER MANAGEMENT
+    // ========================================
 
     private String deviceId;
     private String riderName;
-    private String riderNameTest = "Kasperman";  // New test variable
+    private String riderNameTest = "Kasperman"; // Test variable for development
 
-    // Sensor-related fields
+    // ========================================
+    // SENSOR COMPONENTS
+    // ========================================
+
     private SensorManager sensorManager;
     private Sensor accelerometer;
     private GyroDialView dialView;
-    private float currentYaw = 0; // Will always be 0 for accelerometer
-    private float currentPitch = 0;
-    private float currentRoll = 0;
+    private float currentYaw = 0;    // Always 0 for accelerometer (requires magnetometer)
+    private float currentPitch = 0;  // Forward/backward tilt
+    private float currentRoll = 0;   // Left/right tilt
     private boolean dialActive = false;
     private String availableMotionSensors = "";
 
-    // Socket.IO fields
+    // ========================================
+    // NETWORK & SOCKET.IO
+    // ========================================
+
     private Socket socket;
-    private static final String SERVER_URL = "http://3.91.244.249:5000/";
-    private static final String RIDER_API_URL = "http://3.91.244.249:5000/get_rider/3";
-    private static final String TAG = "GyroSocket";
     private boolean socketConnected = false;
     private long lastSendTime = 0;
-    private static final long SEND_INTERVAL = 100; // Send data every 100ms (10 times per second)
 
-    // Rider management
+    // ========================================
+    // RIDER MANAGEMENT
+    // ========================================
+
     private String currentRiderName = "";
     private String currentAppId = "";
     private long lastRiderFetchTime = 0;
-    private static final long RIDER_FETCH_INTERVAL = 30000; // Fetch rider every 30 seconds
     private ExecutorService executorService;
 
-    // Fallback fictional riders (in case API fails)
-    private String[] fallbackRiders = {
-            "Lightning McQueen",
-            "Speed Racer",
-            "Ghost Rider",
-            "Easy Rider",
-            "Storm Chaser"
+    // Fallback fictional riders (used when API is unavailable)
+    private final String[] fallbackRiders = {
+            "Lightning McQueen", "Speed Racer", "Ghost Rider",
+            "Easy Rider", "Storm Chaser"
     };
-    private Random random = new Random();
+    private final Random random = new Random();
+
+    // ========================================
+    // LIFECYCLE METHODS
+    // ========================================
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        SharedPreferences prefs = getSharedPreferences("app_prefs", MODE_PRIVATE);
-        // Optional: Clear previous rider name for testing - COMMENTED OUT to allow rider name persistence
-        // prefs.edit().remove("rider_name").apply();
+        initializeDeviceAndRider();
+        setupUI();
+        initializeComponents();
+        connectToServer();
+    }
 
-        // --- Device ID ---
-        // Check if device ID was already stored in SharedPreferences
+    @Override
+    protected void onResume() {
+        super.onResume();
+        registerSensorListener();
+        reconnectSocketIfNeeded();
+        fetchRiderFromAPI();
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        unregisterSensorListener();
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        cleanup();
+    }
+
+    // ========================================
+    // INITIALIZATION METHODS
+    // ========================================
+
+    /**
+     * Initialize device ID and rider name from SharedPreferences or prompt user
+     */
+    private void initializeDeviceAndRider() {
+        SharedPreferences prefs = getSharedPreferences("app_prefs", MODE_PRIVATE);
+
+        // Initialize device ID
+        initializeDeviceId(prefs);
+
+        // Initialize rider name
+        initializeRiderName(prefs);
+    }
+
+    /**
+     * Generate or retrieve stored device ID
+     */
+    private void initializeDeviceId(SharedPreferences prefs) {
         deviceId = prefs.getString("device_id", null);
 
         if (deviceId == null || deviceId.isEmpty()) {
-            // Device ID not found - generate new UUID and store it
             deviceId = UUID.randomUUID().toString();
             prefs.edit().putString("device_id", deviceId).apply();
-            Log.d("DeviceID", "New device ID generated and stored: " + deviceId);
+            Log.d("DeviceID", "New device ID generated: " + deviceId);
         } else {
-            // Device ID already exists - use the stored one
             Log.d("DeviceID", "Existing device ID found: " + deviceId);
         }
+    }
 
-        // --- Rider Name ---
-        // Check if rider name was already set in SharedPreferences
+    /**
+     * Get rider name from preferences or show input dialog
+     */
+    private void initializeRiderName(SharedPreferences prefs) {
         riderName = prefs.getString("rider_name", null);
 
         if (riderName == null || riderName.isEmpty()) {
-            // Rider name not set - show dialog to ask user for their name
-            AlertDialog.Builder builder = new AlertDialog.Builder(this);
-            builder.setTitle("Enter your name");
-            builder.setCancelable(false); // Prevent dismissing by touching outside or back button
-
-            final EditText input = new EditText(this);
-            input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PERSON_NAME);
-            builder.setView(input);
-
-            builder.setPositiveButton("OK", (dialog, which) -> {
-                String name = input.getText().toString().trim();
-                if (!name.isEmpty()) {
-                    riderName = name;
-                } else {
-                    riderName = "New Rider"; // fallback if user enters empty text
-                }
-                // Save the rider name to SharedPreferences for future app launches
-                prefs.edit().putString("rider_name", riderName).apply();
-
-                Log.d("RiderName", "New rider name entered: " + riderName);
-                Log.d("DeviceID", deviceId);
-            });
-
-            builder.show();
+            showRiderNameDialog(prefs);
         } else {
-            // Rider name already exists in SharedPreferences - no need to show dialog
-            Log.d("RiderName", "Existing rider name found: " + riderName);
-            Log.d("DeviceID", deviceId);
+            Log.d("RiderName", "Existing rider name: " + riderName);
         }
+    }
 
-        // Hide the ActionBar
+    /**
+     * Show dialog for user to enter their name
+     */
+    private void showRiderNameDialog(SharedPreferences prefs) {
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("Enter your name")
+                .setCancelable(false);
+
+        final EditText input = new EditText(this);
+        input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PERSON_NAME);
+        builder.setView(input);
+
+        builder.setPositiveButton("OK", (dialog, which) -> {
+            String name = input.getText().toString().trim();
+            riderName = name.isEmpty() ? "New Rider" : name;
+            prefs.edit().putString("rider_name", riderName).apply();
+            Log.d("RiderName", "New rider name entered: " + riderName);
+        });
+
+        builder.show();
+    }
+
+    /**
+     * Setup UI components and orientation
+     */
+    private void setupUI() {
+        // Hide action bar
         if (getSupportActionBar() != null) {
             getSupportActionBar().hide();
         }
 
-
-        // Lock orientation to landscape
+        // Lock to landscape orientation
         setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
 
-        // Initialize executor service for API calls
-        executorService = Executors.newSingleThreadExecutor();
-
-        // Initialize sensors
-        initializeSensors();
-
-        // Initialize Socket.IO
-        initializeSocket();
-
-        // Create gyro dial view and set it as the main content
+        // Create and set custom dial view
         dialView = new GyroDialView(this);
         setContentView(dialView);
         dialActive = true;
+    }
 
-        // Fetch initial rider data
+    /**
+     * Initialize all components (sensors, socket, executor)
+     */
+    private void initializeComponents() {
+        executorService = Executors.newSingleThreadExecutor();
+        initializeSensors();
+        initializeSocket();
         fetchRiderFromAPI();
-
-        // Auto-connect to server
-        connectToServer();
     }
 
-    private void fetchRiderFromAPI() {
-        executorService.execute(() -> {
-            try {
-                Log.d(TAG, "Fetching rider from API: " + RIDER_API_URL);
+    // ========================================
+    // SENSOR MANAGEMENT
+    // ========================================
 
-                URL url = new URL(RIDER_API_URL);
-                HttpURLConnection connection = (HttpURLConnection) url.openConnection();
-                connection.setRequestMethod("GET");
-                connection.setConnectTimeout(5000); // 5 second timeout
-                connection.setReadTimeout(5000);
-
-                int responseCode = connection.getResponseCode();
-                if (responseCode == HttpURLConnection.HTTP_OK) {
-                    BufferedReader reader = new BufferedReader(new InputStreamReader(connection.getInputStream()));
-                    StringBuilder response = new StringBuilder();
-                    String line;
-
-                    while ((line = reader.readLine()) != null) {
-                        response.append(line);
-                    }
-                    reader.close();
-
-                    // Parse JSON response
-                    JSONObject jsonResponse = new JSONObject(response.toString());
-                    String appId = jsonResponse.optString("appId", "");
-                    String rider = jsonResponse.optString("rider", "");
-
-                    // Update on main thread
-                    runOnUiThread(() -> {
-                        if (!rider.isEmpty()) {
-                            currentRiderName = rider;
-                            currentAppId = appId;
-                            lastRiderFetchTime = System.currentTimeMillis();
-                            Log.d(TAG, "✓ Fetched rider from API: " + rider + " (" + appId + ")");
-
-                            if (dialView != null) {
-                                dialView.invalidate(); // Refresh UI
-                            }
-                        } else {
-                            Log.w(TAG, "Empty rider name from API, using fallback");
-                            useFallbackRider();
-                        }
-                    });
-
-                } else {
-                    Log.e(TAG, "API request failed with code: " + responseCode);
-                    runOnUiThread(() -> useFallbackRider());
-                }
-
-                connection.disconnect();
-
-            } catch (Exception e) {
-                Log.e(TAG, "Error fetching rider from API", e);
-                runOnUiThread(() -> useFallbackRider());
-            }
-        });
-    }
-
-    private void useFallbackRider() {
-        if (currentRiderName.isEmpty()) {
-            currentRiderName = fallbackRiders[random.nextInt(fallbackRiders.length)];
-            currentAppId = "fallback_rider";
-            Log.d(TAG, "Using fallback rider: " + currentRiderName);
-        }
-    }
-
-    private void checkAndUpdateRider() {
-        long currentTime = System.currentTimeMillis();
-
-        // Fetch new rider data every 30 seconds or if current rider is empty
-        if (currentRiderName.isEmpty() || (currentTime - lastRiderFetchTime > RIDER_FETCH_INTERVAL)) {
-            fetchRiderFromAPI();
-        }
-    }
-
+    /**
+     * Initialize sensor manager and accelerometer
+     */
     private void initializeSensors() {
         sensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
-
-        // Get list of available motion sensors
         listAvailableMotionSensors();
 
         accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
         if (accelerometer == null) {
-            Toast.makeText(this, "Accelerometer not available", Toast.LENGTH_LONG).show();
+            showToast("Accelerometer not available", Toast.LENGTH_LONG);
         }
     }
 
-    private void initializeSocket() {
-        try {
-            Log.d(TAG, "Initializing Socket.IO connection to: " + SERVER_URL);
-
-            IO.Options opts = new IO.Options();
-            opts.transports = new String[]{"websocket"};
-            socket = IO.socket(SERVER_URL, opts);
-
-            // Connection events
-            socket.on(Socket.EVENT_CONNECT, new Emitter.Listener() {
-                @Override
-                public void call(Object... args) {
-                    runOnUiThread(() -> {
-                        socketConnected = true;
-                        Log.d(TAG, "✓ Connected to server");
-                        Toast.makeText(MainActivity.this, "✓ Connected to server", Toast.LENGTH_SHORT).show();
-                        if (dialView != null) {
-                            dialView.setConnectionStatus(true);
-                        }
-                    });
-                }
-            });
-
-            socket.on(Socket.EVENT_DISCONNECT, new Emitter.Listener() {
-                @Override
-                public void call(Object... args) {
-                    runOnUiThread(() -> {
-                        socketConnected = false;
-                        Log.d(TAG, "✗ Disconnected from server");
-                        Toast.makeText(MainActivity.this, "✗ Disconnected from server", Toast.LENGTH_SHORT).show();
-                        if (dialView != null) {
-                            dialView.setConnectionStatus(false);
-                        }
-                    });
-                }
-            });
-
-            socket.on(Socket.EVENT_CONNECT_ERROR, new Emitter.Listener() {
-                @Override
-                public void call(Object... args) {
-                    runOnUiThread(() -> {
-                        socketConnected = false;
-                        String error = args.length > 0 ? args[0].toString() : "Unknown error";
-                        Log.e(TAG, "✗ Connection error: " + error);
-                        Toast.makeText(MainActivity.this, "Connection failed", Toast.LENGTH_LONG).show();
-                        if (dialView != null) {
-                            dialView.setConnectionStatus(false);
-                        }
-                    });
-                }
-            });
-
-            // Listen for server responses
-            socket.on("attitude_data", new Emitter.Listener() {
-                @Override
-                public void call(Object... args) {
-                    try {
-                        JSONObject data = (JSONObject) args[0];
-                        String rider = data.optString("riderDisplayName", "");
-                        Log.d(TAG, "Server broadcast from: " + rider);
-                    } catch (Exception e) {
-                        Log.e(TAG, "Error parsing server response", e);
-                    }
-                }
-            });
-
-        } catch (URISyntaxException e) {
-            Log.e(TAG, "URI Syntax error", e);
-            Toast.makeText(this, "Invalid server URL", Toast.LENGTH_LONG).show();
-        } catch (Exception e) {
-            Log.e(TAG, "Error initializing socket", e);
+    /**
+     * Register sensor listener for accelerometer updates
+     */
+    private void registerSensorListener() {
+        if (accelerometer != null && sensorManager != null) {
+            sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_UI);
         }
     }
 
-    private void connectToServer() {
-        if (socket != null && !socket.connected()) {
-            Log.d(TAG, "Connecting to server...");
-            socket.connect();
-        }
-    }
-
-    private void sendAttitudeData() {
-        if (socket == null || !socketConnected) {
-            return;
-        }
-
-        // Throttle sending to avoid overwhelming the server
-        long currentTime = System.currentTimeMillis();
-        if (currentTime - lastSendTime < SEND_INTERVAL) {
-            return;
-        }
-        lastSendTime = currentTime;
-
-        // Check if we need to update rider info
-        checkAndUpdateRider();
-
-        // Ensure we have a rider name (use fallback if needed)
-        if (currentRiderName.isEmpty()) {
-            useFallbackRider();
-        }
-
-        try {
-            JSONObject attitudeData = new JSONObject();
-            attitudeData.put("pitch", Math.round(currentPitch * 10.0) / 10.0); // Round to 1 decimal place
-            attitudeData.put("yaw", Math.round(currentYaw * 10.0) / 10.0);
-            attitudeData.put("roll", Math.round(currentRoll * 10.0) / 10.0);
-            attitudeData.put("rider", "gyro_app");
-            attitudeData.put("riderDisplayName", currentRiderName); // Use API-fetched rider name
-
-            socket.emit("attitude_update", attitudeData);
-
-            // Log every 1 second (10 sends) to avoid spam
-            if (currentTime % 1000 < SEND_INTERVAL) {
-                Log.d(TAG, String.format("Sent [%s]: P=%.1f°, Y=%.1f°, R=%.1f°",
-                        currentRiderName, currentPitch, currentYaw, currentRoll));
-            }
-
-        } catch (JSONException e) {
-            Log.e(TAG, "Error creating attitude JSON", e);
-        }
-    }
-
-    private void listAvailableMotionSensors() {
+    /**
+     * Unregister sensor listener to save battery
+     */
+    private void unregisterSensorListener() {
         if (sensorManager != null) {
-            java.util.List<Sensor> sensors = sensorManager.getSensorList(Sensor.TYPE_ALL);
-            StringBuilder sensorList = new StringBuilder();
-
-            sensorList.append("Motion-Related Sensors:\n");
-            for (Sensor sensor : sensors) {
-                if (isMotionSensor(sensor.getType())) {
-                    String sensorType = getSensorTypeName(sensor.getType());
-                    sensorList.append("• ").append(sensorType).append("\n");
-                }
-            }
-
-            availableMotionSensors = sensorList.toString();
+            sensorManager.unregisterListener(this);
         }
     }
 
+    /**
+     * Get list of available motion sensors on this device
+     */
+    private void listAvailableMotionSensors() {
+        if (sensorManager == null) return;
+
+        java.util.List<Sensor> sensors = sensorManager.getSensorList(Sensor.TYPE_ALL);
+        StringBuilder sensorList = new StringBuilder("Motion-Related Sensors:\n");
+
+        for (Sensor sensor : sensors) {
+            if (isMotionSensor(sensor.getType())) {
+                sensorList.append("• ").append(getSensorTypeName(sensor.getType())).append("\n");
+            }
+        }
+
+        availableMotionSensors = sensorList.toString();
+    }
+
+    /**
+     * Check if sensor type is motion-related
+     */
     private boolean isMotionSensor(int sensorType) {
         switch (sensorType) {
             case Sensor.TYPE_ACCELEROMETER:
@@ -414,60 +310,334 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         }
     }
 
+    /**
+     * Get human-readable sensor type name
+     */
     private String getSensorTypeName(int sensorType) {
         switch (sensorType) {
-            case Sensor.TYPE_ACCELEROMETER:
-                return "Accelerometer";
-            case Sensor.TYPE_GYROSCOPE:
-                return "Gyroscope";
-            case Sensor.TYPE_MAGNETIC_FIELD:
-                return "Magnetometer";
-            case Sensor.TYPE_ROTATION_VECTOR:
-                return "Rotation Vector";
-            case Sensor.TYPE_ORIENTATION:
-                return "Orientation (Deprecated)";
-            case Sensor.TYPE_GRAVITY:
-                return "Gravity";
-            case Sensor.TYPE_LINEAR_ACCELERATION:
-                return "Linear Acceleration";
-            case Sensor.TYPE_GAME_ROTATION_VECTOR:
-                return "Game Rotation Vector";
-            case Sensor.TYPE_GEOMAGNETIC_ROTATION_VECTOR:
-                return "Geomagnetic Rotation Vector";
-            case Sensor.TYPE_STEP_COUNTER:
-                return "Step Counter";
-            case Sensor.TYPE_STEP_DETECTOR:
-                return "Step Detector";
-            default:
-                return "Unknown Motion Sensor (Type: " + sensorType + ")";
+            case Sensor.TYPE_ACCELEROMETER: return "Accelerometer";
+            case Sensor.TYPE_GYROSCOPE: return "Gyroscope";
+            case Sensor.TYPE_MAGNETIC_FIELD: return "Magnetometer";
+            case Sensor.TYPE_ROTATION_VECTOR: return "Rotation Vector";
+            case Sensor.TYPE_ORIENTATION: return "Orientation (Deprecated)";
+            case Sensor.TYPE_GRAVITY: return "Gravity";
+            case Sensor.TYPE_LINEAR_ACCELERATION: return "Linear Acceleration";
+            case Sensor.TYPE_GAME_ROTATION_VECTOR: return "Game Rotation Vector";
+            case Sensor.TYPE_GEOMAGNETIC_ROTATION_VECTOR: return "Geomagnetic Rotation Vector";
+            case Sensor.TYPE_STEP_COUNTER: return "Step Counter";
+            case Sensor.TYPE_STEP_DETECTOR: return "Step Detector";
+            default: return "Unknown Motion Sensor (Type: " + sensorType + ")";
+        }
+    }
+
+    // ========================================
+    // SENSOR EVENT HANDLING
+    // ========================================
+
+    @Override
+    public void onSensorChanged(SensorEvent event) {
+        if (event.sensor.getType() == Sensor.TYPE_ACCELEROMETER) {
+            processAccelerometerData(event.values);
         }
     }
 
     @Override
-    protected void onResume() {
-        super.onResume();
-        if (accelerometer != null) {
-            sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_UI);
+    public void onAccuracyChanged(Sensor sensor, int accuracy) {
+        // Not used in this implementation
+    }
+
+    /**
+     * Process accelerometer data and calculate tilt angles
+     */
+    private void processAccelerometerData(float[] values) {
+        float x = values[0]; // Left/Right tilt
+        float y = values[1]; // Forward/Backward tilt
+        float z = values[2]; // Up/Down (gravity when stationary)
+
+        // Calculate tilt angles from gravity vector (adjusted for landscape mode)
+        currentRoll = (float) Math.toDegrees(Math.atan2(-y, Math.sqrt(x * x + z * z)));
+        currentPitch = (float) Math.toDegrees(Math.atan2(x, Math.sqrt(y * y + z * z)));
+        currentYaw = 0; // Cannot be determined from accelerometer alone
+
+        updateDialView();
+        sendAttitudeData();
+    }
+
+    /**
+     * Update the dial view with new angle values
+     */
+    private void updateDialView() {
+        if (dialView != null && dialActive) {
+            dialView.setAngles(currentYaw, currentPitch, currentRoll);
         }
-        // Reconnect socket if needed
+    }
+
+    // ========================================
+    // SOCKET.IO MANAGEMENT
+    // ========================================
+
+    /**
+     * Initialize Socket.IO connection with event listeners
+     */
+    private void initializeSocket() {
+        try {
+            Log.d(TAG, "Initializing Socket.IO connection to: " + SERVER_URL);
+
+            IO.Options opts = new IO.Options();
+            opts.transports = new String[]{"websocket"};
+            socket = IO.socket(SERVER_URL, opts);
+
+            setupSocketEventListeners();
+
+        } catch (URISyntaxException e) {
+            Log.e(TAG, "URI Syntax error", e);
+            showToast("Invalid server URL", Toast.LENGTH_LONG);
+        } catch (Exception e) {
+            Log.e(TAG, "Error initializing socket", e);
+        }
+    }
+
+    /**
+     * Setup all Socket.IO event listeners
+     */
+    private void setupSocketEventListeners() {
+        socket.on(Socket.EVENT_CONNECT, args -> runOnUiThread(() -> {
+            socketConnected = true;
+            Log.d(TAG, "✓ Connected to server");
+            showToast("✓ Connected to server", Toast.LENGTH_SHORT);
+            if (dialView != null) {
+                dialView.setConnectionStatus(true);
+            }
+        }));
+
+        socket.on(Socket.EVENT_DISCONNECT, args -> runOnUiThread(() -> {
+            socketConnected = false;
+            Log.d(TAG, "✗ Disconnected from server");
+            showToast("✗ Disconnected from server", Toast.LENGTH_SHORT);
+            if (dialView != null) {
+                dialView.setConnectionStatus(false);
+            }
+        }));
+
+        socket.on(Socket.EVENT_CONNECT_ERROR, args -> runOnUiThread(() -> {
+            socketConnected = false;
+            String error = args.length > 0 ? args[0].toString() : "Unknown error";
+            Log.e(TAG, "✗ Connection error: " + error);
+            showToast("Connection failed", Toast.LENGTH_LONG);
+            if (dialView != null) {
+                dialView.setConnectionStatus(false);
+            }
+        }));
+
+        socket.on("attitude_data", args -> {
+            try {
+                JSONObject data = (JSONObject) args[0];
+                String rider = data.optString("riderDisplayName", "");
+                Log.d(TAG, "Server broadcast from: " + rider);
+            } catch (Exception e) {
+                Log.e(TAG, "Error parsing server response", e);
+            }
+        });
+    }
+
+    /**
+     * Connect to server if not already connected
+     */
+    private void connectToServer() {
+        if (socket != null && !socket.connected()) {
+            Log.d(TAG, "Connecting to server...");
+            socket.connect();
+        }
+    }
+
+    /**
+     * Reconnect socket if needed (called in onResume)
+     */
+    private void reconnectSocketIfNeeded() {
         if (socket != null && !socket.connected()) {
             connectToServer();
         }
-        // Refresh rider data when app resumes
-        fetchRiderFromAPI();
     }
 
-    @Override
-    protected void onPause() {
-        super.onPause();
-        if (sensorManager != null) {
-            sensorManager.unregisterListener(this);
+    /**
+     * Send attitude data to server with throttling
+     */
+    private void sendAttitudeData() {
+        if (socket == null || !socketConnected) {
+            return;
+        }
+
+        // Throttle sending to avoid overwhelming the server
+        long currentTime = System.currentTimeMillis();
+        if (currentTime - lastSendTime < SEND_INTERVAL) {
+            return;
+        }
+        lastSendTime = currentTime;
+
+        checkAndUpdateRider();
+        ensureRiderNameExists();
+
+        try {
+            JSONObject attitudeData = createAttitudeDataJson();
+            socket.emit("attitude_update", attitudeData);
+            logDataTransmission(currentTime);
+        } catch (JSONException e) {
+            Log.e(TAG, "Error creating attitude JSON", e);
         }
     }
 
-    @Override
-    protected void onDestroy() {
-        super.onDestroy();
+    /**
+     * Create JSON object with attitude data
+     */
+    private JSONObject createAttitudeDataJson() throws JSONException {
+        JSONObject attitudeData = new JSONObject();
+        attitudeData.put("pitch", Math.round(currentPitch * 10.0) / 10.0);
+        attitudeData.put("yaw", Math.round(currentYaw * 10.0) / 10.0);
+        attitudeData.put("roll", Math.round(currentRoll * 10.0) / 10.0);
+        attitudeData.put("rider", "gyro_app");
+        attitudeData.put("riderDisplayName", currentRiderName);
+        return attitudeData;
+    }
+
+    /**
+     * Log data transmission (throttled to avoid spam)
+     */
+    private void logDataTransmission(long currentTime) {
+        if (currentTime % 1000 < SEND_INTERVAL) {
+            Log.d(TAG, String.format("Sent [%s]: P=%.1f°, Y=%.1f°, R=%.1f°",
+                    currentRiderName, currentPitch, currentYaw, currentRoll));
+        }
+    }
+
+    // ========================================
+    // RIDER MANAGEMENT
+    // ========================================
+
+    /**
+     * Fetch rider information from API
+     */
+    private void fetchRiderFromAPI() {
+        executorService.execute(() -> {
+            try {
+                Log.d(TAG, "Fetching rider from API: " + RIDER_API_URL);
+
+                JSONObject jsonResponse = makeApiRequest();
+                if (jsonResponse != null) {
+                    processApiResponse(jsonResponse);
+                } else {
+                    runOnUiThread(this::useFallbackRider);
+                }
+
+            } catch (Exception e) {
+                Log.e(TAG, "Error fetching rider from API", e);
+                runOnUiThread(this::useFallbackRider);
+            }
+        });
+    }
+
+    /**
+     * Make HTTP request to rider API
+     */
+    private JSONObject makeApiRequest() throws Exception {
+        URL url = new URL(RIDER_API_URL);
+        HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+        connection.setRequestMethod("GET");
+        connection.setConnectTimeout(5000);
+        connection.setReadTimeout(5000);
+
+        int responseCode = connection.getResponseCode();
+        if (responseCode == HttpURLConnection.HTTP_OK) {
+            BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(connection.getInputStream()));
+            StringBuilder response = new StringBuilder();
+            String line;
+
+            while ((line = reader.readLine()) != null) {
+                response.append(line);
+            }
+            reader.close();
+            connection.disconnect();
+
+            return new JSONObject(response.toString());
+        } else {
+            Log.e(TAG, "API request failed with code: " + responseCode);
+            connection.disconnect();
+            return null;
+        }
+    }
+
+    /**
+     * Process successful API response
+     */
+    private void processApiResponse(JSONObject jsonResponse) {
+        String appId = jsonResponse.optString("appId", "");
+        String rider = jsonResponse.optString("rider", "");
+
+        runOnUiThread(() -> {
+            if (!rider.isEmpty()) {
+                currentRiderName = rider;
+                currentAppId = appId;
+                lastRiderFetchTime = System.currentTimeMillis();
+                Log.d(TAG, "✓ Fetched rider from API: " + rider + " (" + appId + ")");
+
+                if (dialView != null) {
+                    dialView.invalidate();
+                }
+            } else {
+                Log.w(TAG, "Empty rider name from API, using fallback");
+                useFallbackRider();
+            }
+        });
+    }
+
+    /**
+     * Use random fallback rider when API is unavailable
+     */
+    private void useFallbackRider() {
+        if (currentRiderName.isEmpty()) {
+            currentRiderName = fallbackRiders[random.nextInt(fallbackRiders.length)];
+            currentAppId = "fallback_rider";
+            Log.d(TAG, "Using fallback rider: " + currentRiderName);
+        }
+    }
+
+    /**
+     * Check if rider data needs updating and fetch if necessary
+     */
+    private void checkAndUpdateRider() {
+        long currentTime = System.currentTimeMillis();
+        boolean needsUpdate = currentRiderName.isEmpty() ||
+                (currentTime - lastRiderFetchTime > RIDER_FETCH_INTERVAL);
+
+        if (needsUpdate) {
+            fetchRiderFromAPI();
+        }
+    }
+
+    /**
+     * Ensure we have a rider name (use fallback if needed)
+     */
+    private void ensureRiderNameExists() {
+        if (currentRiderName.isEmpty()) {
+            useFallbackRider();
+        }
+    }
+
+    // ========================================
+    // UTILITY METHODS
+    // ========================================
+
+    /**
+     * Show toast message on UI thread
+     */
+    private void showToast(String message, int duration) {
+        Toast.makeText(this, message, duration).show();
+    }
+
+    /**
+     * Clean up resources on app destruction
+     */
+    private void cleanup() {
         if (socket != null) {
             socket.disconnect();
             Log.d(TAG, "Socket disconnected in onDestroy");
@@ -477,87 +647,93 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         }
     }
 
-    @Override
-    public void onSensorChanged(SensorEvent event) {
-        if (event.sensor.getType() == Sensor.TYPE_ACCELEROMETER) {
-            // Get accelerometer values (m/s²)
-            float x = event.values[0]; // Left/Right tilt
-            float y = event.values[1]; // Forward/Backward tilt
-            float z = event.values[2]; // Up/Down (gravity when stationary)
+    // ========================================
+    // CUSTOM VIEW - GYRO DIAL DISPLAY
+    // ========================================
 
-            // Calculate tilt angles from gravity vector
-            // In landscape mode, we need to adjust the axis mapping:
-            // Roll: rotation that would normally change left/right tilt
-            currentRoll = (float) Math.toDegrees(Math.atan2(-y, Math.sqrt(x * x + z * z)));
-
-            // Pitch: rotation that would normally change forward/backward tilt
-            currentPitch = (float) Math.toDegrees(Math.atan2(x, Math.sqrt(y * y + z * z)));
-
-            // Yaw: Cannot be determined from accelerometer alone
-            currentYaw = 0;
-
-            if (dialView != null && dialActive) {
-                dialView.setAngles(currentYaw, currentPitch, currentRoll);
-            }
-
-            // Send data to server
-            sendAttitudeData();
-        }
-    }
-
-    @Override
-    public void onAccuracyChanged(Sensor sensor, int accuracy) {
-    }
-
-    // Custom view class for drawing the gyroscope data
+    /**
+     * Custom view class for displaying gyroscope data with three circular dials
+     * Shows Yaw (not available), Pitch, and Roll with visual indicators
+     */
     private class GyroDialView extends View {
-        private Paint dialPaint;
-        private Paint needlePaint;
-        private Paint textPaint;
-        private Paint centerPaint;
-        private Paint backgroundPaint;
-        private Paint statusPaint;
+
+        // Paint objects for different UI elements
+        private final Paint dialPaint;
+        private final Paint needlePaint;
+        private final Paint textPaint;
+        private final Paint centerPaint;
+        private final Paint backgroundPaint;
+        private final Paint statusPaint;
+
         private boolean connected = false;
 
         public GyroDialView(Context context) {
             super(context);
-            initPaints();
+
+            // Initialize all paint objects
+            backgroundPaint = createBackgroundPaint();
+            dialPaint = createDialPaint();
+            needlePaint = createNeedlePaint();
+            textPaint = createTextPaint();
+            centerPaint = createCenterPaint();
+            statusPaint = createStatusPaint();
+
             setBackgroundColor(Color.WHITE);
         }
 
-        private void initPaints() {
-            backgroundPaint = new Paint();
-            backgroundPaint.setColor(Color.WHITE);
-            backgroundPaint.setStyle(Paint.Style.FILL);
-
-            dialPaint = new Paint();
-            dialPaint.setColor(Color.GRAY);
-            dialPaint.setStyle(Paint.Style.STROKE);
-            dialPaint.setStrokeWidth(8);
-            dialPaint.setAntiAlias(true);
-
-            needlePaint = new Paint();
-            needlePaint.setColor(Color.RED);
-            needlePaint.setStrokeWidth(6);
-            needlePaint.setAntiAlias(true);
-
-            textPaint = new Paint();
-            textPaint.setColor(Color.BLACK);
-            textPaint.setTextSize(48);
-            textPaint.setTextAlign(Paint.Align.CENTER);
-            textPaint.setAntiAlias(true);
-
-            centerPaint = new Paint();
-            centerPaint.setColor(Color.BLACK);
-            centerPaint.setStyle(Paint.Style.FILL);
-            centerPaint.setAntiAlias(true);
-
-            statusPaint = new Paint();
-            statusPaint.setTextSize(24);
-            statusPaint.setTextAlign(Paint.Align.LEFT);
-            statusPaint.setAntiAlias(true);
+        // Paint factory methods for cleaner initialization
+        private Paint createBackgroundPaint() {
+            Paint paint = new Paint();
+            paint.setColor(Color.WHITE);
+            paint.setStyle(Paint.Style.FILL);
+            return paint;
         }
 
+        private Paint createDialPaint() {
+            Paint paint = new Paint();
+            paint.setColor(Color.GRAY);
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(8);
+            paint.setAntiAlias(true);
+            return paint;
+        }
+
+        private Paint createNeedlePaint() {
+            Paint paint = new Paint();
+            paint.setColor(Color.RED);
+            paint.setStrokeWidth(6);
+            paint.setAntiAlias(true);
+            return paint;
+        }
+
+        private Paint createTextPaint() {
+            Paint paint = new Paint();
+            paint.setColor(Color.BLACK);
+            paint.setTextSize(48);
+            paint.setTextAlign(Paint.Align.CENTER);
+            paint.setAntiAlias(true);
+            return paint;
+        }
+
+        private Paint createCenterPaint() {
+            Paint paint = new Paint();
+            paint.setColor(Color.BLACK);
+            paint.setStyle(Paint.Style.FILL);
+            paint.setAntiAlias(true);
+            return paint;
+        }
+
+        private Paint createStatusPaint() {
+            Paint paint = new Paint();
+            paint.setTextSize(24);
+            paint.setTextAlign(Paint.Align.LEFT);
+            paint.setAntiAlias(true);
+            return paint;
+        }
+
+        /**
+         * Update angles and refresh display
+         */
         public void setAngles(float yaw, float pitch, float roll) {
             currentYaw = yaw;
             currentPitch = pitch;
@@ -565,6 +741,9 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             invalidate();
         }
 
+        /**
+         * Update connection status and refresh display
+         */
         public void setConnectionStatus(boolean connected) {
             this.connected = connected;
             invalidate();
@@ -583,52 +762,43 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             // Clear background
             canvas.drawRect(0, 0, width, height, backgroundPaint);
 
-            // Draw current rider name at the very top, centered
-            drawTopRider(canvas, width);
-
-            // Draw test rider name below the main rider name
-            drawTestRider(canvas, width);
-
-            // Draw connection status below all the top information
+            // Draw UI elements from top to bottom
+            drawRiderInformation(canvas, width);
             drawConnectionStatus(canvas, 20, 170);
-
-            // Draw three dials arranged for landscape layout
-            int leftDialX = width / 4;
-            int rightDialX = 3 * width / 4;
-            int dialY = centerY;
-
-            drawYawDial(canvas, leftDialX, dialY, radius);
-            drawPitchDial(canvas, rightDialX, dialY, radius);
-            drawRollDial(canvas, centerX, dialY, radius);
-
-            // Draw pitch and roll values at the bottom
+            drawThreeDials(canvas, width, centerY, radius);
             drawPitchRollValues(canvas, centerX, height - 80);
         }
 
-        // Helper method for top rider name
-        private void drawTopRider(Canvas canvas, int width) {
-            Paint topPaint = new Paint();
-            topPaint.setColor(Color.BLUE);
-            topPaint.setTextSize(40);
-            topPaint.setTextAlign(Paint.Align.CENTER);
-            topPaint.setAntiAlias(true);
-
+        /**
+         * Draw rider information at the top
+         */
+        private void drawRiderInformation(Canvas canvas, int width) {
+            // Main rider name from API
             if (!currentRiderName.isEmpty()) {
+                Paint topPaint = createRiderNamePaint(Color.BLUE, 40);
                 canvas.drawText("Rider: " + currentRiderName, width / 2, 50, topPaint);
             }
-        }
 
-        // New method to display the test rider name
-        private void drawTestRider(Canvas canvas, int width) {
-            Paint testPaint = new Paint();
-            testPaint.setColor(Color.MAGENTA);
-            testPaint.setTextSize(32);
-            testPaint.setTextAlign(Paint.Align.CENTER);
-            testPaint.setAntiAlias(true);
-
+            // Test rider name (development feature)
+            Paint testPaint = createRiderNamePaint(Color.MAGENTA, 32);
             canvas.drawText("RIDER: " + riderName, width / 2, 85, testPaint);
         }
 
+        /**
+         * Create paint for rider name display
+         */
+        private Paint createRiderNamePaint(int color, int textSize) {
+            Paint paint = new Paint();
+            paint.setColor(color);
+            paint.setTextSize(textSize);
+            paint.setTextAlign(Paint.Align.CENTER);
+            paint.setAntiAlias(true);
+            return paint;
+        }
+
+        /**
+         * Draw connection status indicator
+         */
         private void drawConnectionStatus(Canvas canvas, int x, int y) {
             if (connected) {
                 statusPaint.setColor(Color.GREEN);
@@ -641,119 +811,193 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             }
         }
 
+        /**
+         * Draw three dials arranged for landscape layout
+         */
+        private void drawThreeDials(Canvas canvas, int width, int centerY, int radius) {
+            int leftDialX = width / 4;
+            int rightDialX = 3 * width / 4;
+            int centerX = width / 2;
+
+            drawYawDial(canvas, leftDialX, centerY, radius);
+            drawPitchDial(canvas, rightDialX, centerY, radius);
+            drawRollDial(canvas, centerX, centerY, radius);
+        }
+
+        /**
+         * Draw yaw dial (shows N/A since accelerometer can't measure yaw)
+         */
         private void drawYawDial(Canvas canvas, int centerX, int centerY, int radius) {
             canvas.drawCircle(centerX, centerY, radius, dialPaint);
 
-            // Draw a simple cross pattern since yaw is not available
+            // Draw X pattern to indicate unavailable
             Paint unavailablePaint = new Paint();
             unavailablePaint.setColor(Color.GRAY);
             unavailablePaint.setStrokeWidth(6);
             unavailablePaint.setAntiAlias(true);
 
-            canvas.drawLine(centerX - radius/2, centerY - radius/2, centerX + radius/2, centerY + radius/2, unavailablePaint);
-            canvas.drawLine(centerX + radius/2, centerY - radius/2, centerX - radius/2, centerY + radius/2, unavailablePaint);
+            int halfRadius = radius / 2;
+            canvas.drawLine(centerX - halfRadius, centerY - halfRadius,
+                    centerX + halfRadius, centerY + halfRadius, unavailablePaint);
+            canvas.drawLine(centerX + halfRadius, centerY - halfRadius,
+                    centerX - halfRadius, centerY + halfRadius, unavailablePaint);
 
-            textPaint.setTextSize(24);
-            canvas.drawText("YAW", centerX, centerY - radius - 30, textPaint);
-
-            textPaint.setTextSize(18);
-            canvas.drawText("(N/A)", centerX, centerY - radius - 8, textPaint);
+            drawDialLabel(canvas, centerX, centerY, radius, "YAW", "(N/A)");
         }
 
+        /**
+         * Draw pitch dial with needle indicator
+         */
         private void drawPitchDial(Canvas canvas, int centerX, int centerY, int radius) {
             canvas.drawCircle(centerX, centerY, radius, dialPaint);
             drawPitchMarkers(canvas, centerX, centerY, radius);
-
-            float angle = (float) Math.toRadians(currentPitch);
-            float needleX = centerX + (radius - 20) * (float) Math.sin(angle);
-            float needleY = centerY - (radius - 20) * (float) Math.cos(angle);
-            canvas.drawLine(centerX, centerY, needleX, needleY, needlePaint);
-            canvas.drawCircle(centerX, centerY, 10, centerPaint);
-
-            textPaint.setTextSize(24);
-            canvas.drawText("PITCH", centerX, centerY - radius - 30, textPaint);
+            drawNeedle(canvas, centerX, centerY, radius, currentPitch);
+            drawDialLabel(canvas, centerX, centerY, radius, "PITCH", null);
         }
 
+        /**
+         * Draw roll dial with needle indicator
+         */
         private void drawRollDial(Canvas canvas, int centerX, int centerY, int radius) {
             canvas.drawCircle(centerX, centerY, radius, dialPaint);
             drawRollMarkers(canvas, centerX, centerY, radius);
+            drawNeedle(canvas, centerX, centerY, radius, currentRoll);
+            drawDialLabel(canvas, centerX, centerY, radius, "ROLL", null);
+        }
 
-            float angle = (float) Math.toRadians(currentRoll);
-            float needleX = centerX + (radius - 20) * (float) Math.sin(angle);
-            float needleY = centerY - (radius - 20) * (float) Math.cos(angle);
+        /**
+         * Draw dial label and optional subtitle
+         */
+        private void drawDialLabel(Canvas canvas, int centerX, int centerY, int radius,
+                                   String label, String subtitle) {
+            textPaint.setTextSize(24);
+            canvas.drawText(label, centerX, centerY - radius - 30, textPaint);
+
+            if (subtitle != null) {
+                textPaint.setTextSize(18);
+                canvas.drawText(subtitle, centerX, centerY - radius - 8, textPaint);
+            }
+        }
+
+        /**
+         * Draw needle indicator on dial
+         */
+        private void drawNeedle(Canvas canvas, int centerX, int centerY, int radius, float angle) {
+            float angleRad = (float) Math.toRadians(angle);
+            float needleLength = radius - 20;
+            float needleX = centerX + needleLength * (float) Math.sin(angleRad);
+            float needleY = centerY - needleLength * (float) Math.cos(angleRad);
+
             canvas.drawLine(centerX, centerY, needleX, needleY, needlePaint);
             canvas.drawCircle(centerX, centerY, 10, centerPaint);
-
-            textPaint.setTextSize(24);
-            canvas.drawText("ROLL", centerX, centerY - radius - 30, textPaint);
         }
 
+        /**
+         * Draw pitch markers with directional labels (Up, Right, Down, Left)
+         */
         private void drawPitchMarkers(Canvas canvas, int centerX, int centerY, int radius) {
-            Paint markerPaint = new Paint();
-            markerPaint.setColor(Color.BLACK);
-            markerPaint.setStrokeWidth(4);
-            markerPaint.setAntiAlias(true);
-
-            Paint labelPaint = new Paint();
-            labelPaint.setColor(Color.BLACK);
-            labelPaint.setTextSize(20);
-            labelPaint.setTextAlign(Paint.Align.CENTER);
-            labelPaint.setAntiAlias(true);
+            Paint markerPaint = createMarkerPaint();
+            Paint labelPaint = createLabelPaint();
 
             String[] labels = {"U", "R", "D", "L"};
+
             for (int i = 0; i < 4; i++) {
                 float angle = (float) Math.toRadians(i * 90);
-                float x1 = centerX + (radius - 20) * (float) Math.sin(angle);
-                float y1 = centerY - (radius - 20) * (float) Math.cos(angle);
-                float x2 = centerX + radius * (float) Math.sin(angle);
-                float y2 = centerY - radius * (float) Math.cos(angle);
-
-                canvas.drawLine(x1, y1, x2, y2, markerPaint);
-
-                float labelX = centerX + (radius + 30) * (float) Math.sin(angle);
-                float labelY = centerY - (radius + 30) * (float) Math.cos(angle) + 8;
-                canvas.drawText(labels[i], labelX, labelY, labelPaint);
+                drawMarkerLine(canvas, centerX, centerY, radius, angle, markerPaint);
+                drawMarkerLabel(canvas, centerX, centerY, radius, angle, labels[i], labelPaint);
             }
         }
 
+        /**
+         * Draw roll markers with degree labels (0, 90, 180, 270)
+         */
         private void drawRollMarkers(Canvas canvas, int centerX, int centerY, int radius) {
-            Paint markerPaint = new Paint();
-            markerPaint.setColor(Color.BLACK);
-            markerPaint.setStrokeWidth(4);
-            markerPaint.setAntiAlias(true);
-
-            Paint labelPaint = new Paint();
-            labelPaint.setColor(Color.BLACK);
-            labelPaint.setTextSize(18);
-            labelPaint.setTextAlign(Paint.Align.CENTER);
-            labelPaint.setAntiAlias(true);
+            Paint markerPaint = createMarkerPaint();
+            Paint labelPaint = createLabelPaint();
 
             String[] labels = {"0", "90", "180", "270"};
+
             for (int i = 0; i < 4; i++) {
                 float angle = (float) Math.toRadians(i * 90);
-                float x1 = centerX + (radius - 20) * (float) Math.sin(angle);
-                float y1 = centerY - (radius - 20) * (float) Math.cos(angle);
-                float x2 = centerX + radius * (float) Math.sin(angle);
-                float y2 = centerY - radius * (float) Math.cos(angle);
-
-                canvas.drawLine(x1, y1, x2, y2, markerPaint);
-
-                float labelX = centerX + (radius + 30) * (float) Math.sin(angle);
-                float labelY = centerY - (radius + 30) * (float) Math.cos(angle) + 8;
-                canvas.drawText(labels[i], labelX, labelY, labelPaint);
+                drawMarkerLine(canvas, centerX, centerY, radius, angle, markerPaint);
+                drawMarkerLabel(canvas, centerX, centerY, radius, angle, labels[i], labelPaint);
             }
         }
 
-        private void drawPitchRollValues(Canvas canvas, int centerX, int startY) {
-            Paint valuePaint = new Paint();
-            valuePaint.setColor(Color.BLACK);
-            valuePaint.setTextSize(32);
-            valuePaint.setTextAlign(Paint.Align.CENTER);
-            valuePaint.setAntiAlias(true);
+        /**
+         * Create paint for dial markers
+         */
+        private Paint createMarkerPaint() {
+            Paint paint = new Paint();
+            paint.setColor(Color.BLACK);
+            paint.setStrokeWidth(4);
+            paint.setAntiAlias(true);
+            return paint;
+        }
 
-            // Draw pitch and roll as whole numbers
-            canvas.drawText("Pitch: " + Math.round(currentPitch) + "°", centerX - 200, startY, valuePaint);
-            canvas.drawText("Roll: " + Math.round(currentRoll) + "°", centerX + 200, startY, valuePaint);
+        /**
+         * Create paint for marker labels
+         */
+        private Paint createLabelPaint() {
+            Paint paint = new Paint();
+            paint.setColor(Color.BLACK);
+            paint.setTextSize(18);
+            paint.setTextAlign(Paint.Align.CENTER);
+            paint.setAntiAlias(true);
+            return paint;
+        }
+
+        /**
+         * Draw marker line on dial circumference
+         */
+        private void drawMarkerLine(Canvas canvas, int centerX, int centerY, int radius,
+                                    float angle, Paint markerPaint) {
+            float innerRadius = radius - 20;
+
+            float x1 = centerX + innerRadius * (float) Math.sin(angle);
+            float y1 = centerY - innerRadius * (float) Math.cos(angle);
+            float x2 = centerX + radius * (float) Math.sin(angle);
+            float y2 = centerY - radius * (float) Math.cos(angle);
+
+            canvas.drawLine(x1, y1, x2, y2, markerPaint);
+        }
+
+        /**
+         * Draw label outside dial circumference
+         */
+        private void drawMarkerLabel(Canvas canvas, int centerX, int centerY, int radius,
+                                     float angle, String label, Paint labelPaint) {
+            float labelRadius = radius + 30;
+            float labelX = centerX + labelRadius * (float) Math.sin(angle);
+            float labelY = centerY - labelRadius * (float) Math.cos(angle) + 8;
+
+            canvas.drawText(label, labelX, labelY, labelPaint);
+        }
+
+        /**
+         * Draw pitch and roll values at the bottom of screen
+         */
+        private void drawPitchRollValues(Canvas canvas, int centerX, int startY) {
+            Paint valuePaint = createValuePaint();
+
+            // Draw pitch and roll as rounded integer values
+            String pitchText = "Pitch: " + Math.round(currentPitch) + "°";
+            String rollText = "Roll: " + Math.round(currentRoll) + "°";
+
+            canvas.drawText(pitchText, centerX - 200, startY, valuePaint);
+            canvas.drawText(rollText, centerX + 200, startY, valuePaint);
+        }
+
+        /**
+         * Create paint for value display
+         */
+        private Paint createValuePaint() {
+            Paint paint = new Paint();
+            paint.setColor(Color.BLACK);
+            paint.setTextSize(32);
+            paint.setTextAlign(Paint.Align.CENTER);
+            paint.setAntiAlias(true);
+            return paint;
         }
     }
 }
