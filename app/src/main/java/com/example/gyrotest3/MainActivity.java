@@ -626,7 +626,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             testPaint.setTextAlign(Paint.Align.CENTER);
             testPaint.setAntiAlias(true);
 
-            canvas.drawText("Test Rider: " + riderName, width / 2, 85, testPaint);
+            canvas.drawText("RIDER: " + riderName, width / 2, 85, testPaint);
         }
 
         private void drawConnectionStatus(Canvas canvas, int x, int y) {
