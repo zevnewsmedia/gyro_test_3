@@ -44,6 +44,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
     private String deviceId;
     private String riderName;
+    private String riderNameTest = "Kasperman";  // New test variable
 
     // Sensor-related fields
     private SensorManager sensorManager;
@@ -569,21 +570,6 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             invalidate();
         }
 
-        private void drawTopRiderPitch(Canvas canvas, int width) {
-            Paint topPaint = new Paint();
-            topPaint.setColor(Color.BLUE);
-            topPaint.setTextSize(36); // Adjust size if needed
-            topPaint.setTextAlign(Paint.Align.CENTER);
-            topPaint.setAntiAlias(true);
-
-            String text = currentRiderName.isEmpty() ? "No Rider" : currentRiderName;
-            text += " - Pitch: " + Math.round(currentPitch) + "°";
-
-            // Draw at top with padding
-            canvas.drawText(text, width / 2, 40, topPaint);
-        }
-
-
         @Override
         protected void onDraw(Canvas canvas) {
             super.onDraw(canvas);
@@ -600,8 +586,11 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             // Draw current rider name at the very top, centered
             drawTopRider(canvas, width);
 
-            // Draw connection status below the top label
-            drawConnectionStatus(canvas, 20, 80);
+            // Draw test rider name below the main rider name
+            drawTestRider(canvas, width);
+
+            // Draw connection status below all the top information
+            drawConnectionStatus(canvas, 20, 170);
 
             // Draw three dials arranged for landscape layout
             int leftDialX = width / 4;
@@ -629,7 +618,16 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             }
         }
 
+        // New method to display the test rider name
+        private void drawTestRider(Canvas canvas, int width) {
+            Paint testPaint = new Paint();
+            testPaint.setColor(Color.MAGENTA);
+            testPaint.setTextSize(32);
+            testPaint.setTextAlign(Paint.Align.CENTER);
+            testPaint.setAntiAlias(true);
 
+            canvas.drawText("Test Rider: " + riderNameTest, width / 2, 85, testPaint);
+        }
 
         private void drawConnectionStatus(Canvas canvas, int x, int y) {
             if (connected) {
@@ -641,19 +639,6 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
                 canvas.drawText("Disconnected", x, y, statusPaint);
                 canvas.drawText("Retrying connection...", x, y + 30, statusPaint);
             }
-        }
-
-        private void drawCurrentRider(Canvas canvas, int x, int y) {
-            statusPaint.setColor(Color.BLUE);
-            statusPaint.setTextSize(20);
-            if (!currentRiderName.isEmpty()) {
-                String displayText = "Current Rider: " + currentRiderName;
-                if (!currentAppId.isEmpty() && !currentAppId.equals("fallback_rider")) {
-                    displayText += " (" + currentAppId + ")";
-                }
-                canvas.drawText(displayText, x, y, statusPaint);
-            }
-            statusPaint.setTextSize(24); // Reset to original size
         }
 
         private void drawYawDial(Canvas canvas, int centerX, int centerY, int radius) {
@@ -770,6 +755,5 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             canvas.drawText("Pitch: " + Math.round(currentPitch) + "°", centerX - 200, startY, valuePaint);
             canvas.drawText("Roll: " + Math.round(currentRoll) + "°", centerX + 200, startY, valuePaint);
         }
-
     }
 }
