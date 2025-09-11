@@ -681,7 +681,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             canvas.drawText("Gyroscope Data", width / 2, 50, titlePaint);
 
             if (riderName != null && !riderName.isEmpty()) {
-                textPaint.setTextSize(20);
+                textPaint.setTextSize(40);
                 textPaint.setColor(Color.rgb(158, 158, 158));
                 canvas.drawText("Rider: " + riderName, width / 2, 80, textPaint);
             }
@@ -742,7 +742,8 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
             // Title above circle
             titlePaint.setTextSize(18);
-            canvas.drawText("PITCH", centerX, centerY - radius - 20, titlePaint);
+            //canvas.drawText("PITCH", centerX, centerY - radius - 20, titlePaint);
+            canvas.drawText("TILT (TURNUP)", centerX, centerY - radius - 20, titlePaint);
         }
 
         /**
@@ -769,7 +770,10 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
             // Title above circle
             titlePaint.setTextSize(18);
-            canvas.drawText("ROLL", centerX, centerY - radius - 20, titlePaint);
+            //canvas.drawText("ROLL", centerX, centerY - radius - 20, titlePaint);
+           // canvas.drawText("ROLL", centerX, centerY - radius - 20, titlePaint);
+            canvas.drawText("LEAN (TABLE TOP)", centerX, centerY - radius - 20, titlePaint);
+
         }
 
         /**
@@ -792,7 +796,8 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
             // Title above circle
             titlePaint.setTextSize(18);
-            canvas.drawText("YAW", centerX, centerY - radius - 20, titlePaint);
+            //canvas.drawText("YAW", centerX, centerY - radius - 20, titlePaint);
+            canvas.drawText("TURN (TURNDOWN)", centerX, centerY - radius - 20, titlePaint);
         }
 
         /**
@@ -844,18 +849,18 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
             // Pitch legend
             dotPaint.setColor(gaugeColors[0]);
-            canvas.drawCircle(width / 4 - 60, legendY - 5, 8, dotPaint);
+            //canvas.drawCircle(width / 4 - 60, legendY - 5, 8, dotPaint);
             labelPaint.setColor(Color.rgb(33, 33, 33));
-            canvas.drawText("pitch", width / 4 - 40, legendY, labelPaint);
+           // canvas.drawText("pitch", width / 4 - 40, legendY, labelPaint);
 
             // Roll legend
             dotPaint.setColor(gaugeColors[1]);
-            canvas.drawCircle(width / 2 - 30, legendY - 5, 8, dotPaint);
-            canvas.drawText("roll", width / 2 - 10, legendY, labelPaint);
+          //  canvas.drawCircle(width / 2 - 30, legendY - 5, 8, dotPaint);
+          //  canvas.drawText("roll", width / 2 - 10, legendY, labelPaint);
 
             // Yaw legend
             dotPaint.setColor(gaugeColors[2]);
-            canvas.drawCircle(3 * width / 4 - 30, legendY - 5, 8, dotPaint);
-            canvas.drawText("yaw", 3 * width / 4 - 10, legendY, labelPaint);
+           // canvas.drawCircle(3 * width / 4 - 30, legendY - 5, 8, dotPaint);
+          //  canvas.drawText("yaw", 3 * width / 4 - 10, legendY, labelPaint);
         }
     }}
