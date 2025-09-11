@@ -45,7 +45,7 @@ import android.text.InputType;
  * Features:
  * - Real-time accelerometer data visualization
  * - Socket.IO connection for data transmission
- * - Rider name management with API integration
+ * - User rider name management
  * - Custom dial view for pitch, roll, and yaw display
  * - Landscape orientation lock
  */
@@ -57,17 +57,14 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
     private static final String TAG = "GyroSocket";
     private static final String SERVER_URL = "http://3.91.244.249:5000/";
-    private static final String RIDER_API_URL = "http://3.91.244.249:5000/get_rider/3";
     private static final long SEND_INTERVAL = 100; // Send data every 100ms (10Hz)
-    private static final long RIDER_FETCH_INTERVAL = 30000; // Fetch rider every 30 seconds
 
     // ========================================
     // DEVICE & USER MANAGEMENT
     // ========================================
 
     private String deviceId;
-    private String riderName;
-    private String riderNameTest = "Kasperman"; // Test variable for development
+    private String riderName; // This will be the primary rider name used throughout the app
 
     // ========================================
     // SENSOR COMPONENTS
@@ -91,22 +88,6 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     private long lastSendTime = 0;
 
     // ========================================
-    // RIDER MANAGEMENT
-    // ========================================
-
-    private String currentRiderName = "";
-    private String currentAppId = "";
-    private long lastRiderFetchTime = 0;
-    private ExecutorService executorService;
-
-    // Fallback fictional riders (used when API is unavailable)
-    private final String[] fallbackRiders = {
-            "Lightning McQueen", "Speed Racer", "Ghost Rider",
-            "Easy Rider", "Storm Chaser"
-    };
-    private final Random random = new Random();
-
-    // ========================================
     // LIFECYCLE METHODS
     // ========================================
 
@@ -125,7 +106,6 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         super.onResume();
         registerSensorListener();
         reconnectSocketIfNeeded();
-        fetchRiderFromAPI();
     }
 
     @Override
@@ -181,7 +161,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         if (riderName == null || riderName.isEmpty()) {
             showRiderNameDialog(prefs);
         } else {
-            Log.d("RiderName", "Existing rider name: " + riderName);
+            Log.d("RiderName", "Using rider name: " + riderName);
         }
     }
 
@@ -202,6 +182,11 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             riderName = name.isEmpty() ? "New Rider" : name;
             prefs.edit().putString("rider_name", riderName).apply();
             Log.d("RiderName", "New rider name entered: " + riderName);
+
+            // Refresh the dial view to show the new name
+            if (dialView != null) {
+                dialView.invalidate();
+            }
         });
 
         builder.show();
@@ -226,13 +211,11 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     }
 
     /**
-     * Initialize all components (sensors, socket, executor)
+     * Initialize all components (sensors, socket)
      */
     private void initializeComponents() {
-        executorService = Executors.newSingleThreadExecutor();
         initializeSensors();
         initializeSocket();
-        fetchRiderFromAPI();
     }
 
     // ========================================
@@ -474,13 +457,13 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         }
         lastSendTime = currentTime;
 
-        checkAndUpdateRider();
-        ensureRiderNameExists();
+        // Ensure we have a rider name (use default if somehow empty)
+        String displayName = (riderName != null && !riderName.isEmpty()) ? riderName : "Unknown Rider";
 
         try {
-            JSONObject attitudeData = createAttitudeDataJson();
+            JSONObject attitudeData = createAttitudeDataJson(displayName);
             socket.emit("attitude_update", attitudeData);
-            logDataTransmission(currentTime);
+            logDataTransmission(currentTime, displayName);
         } catch (JSONException e) {
             Log.e(TAG, "Error creating attitude JSON", e);
         }
@@ -489,137 +472,23 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     /**
      * Create JSON object with attitude data
      */
-    private JSONObject createAttitudeDataJson() throws JSONException {
+    private JSONObject createAttitudeDataJson(String displayName) throws JSONException {
         JSONObject attitudeData = new JSONObject();
         attitudeData.put("pitch", Math.round(currentPitch * 10.0) / 10.0);
         attitudeData.put("yaw", Math.round(currentYaw * 10.0) / 10.0);
         attitudeData.put("roll", Math.round(currentRoll * 10.0) / 10.0);
         attitudeData.put("rider", "gyro_app");
-        attitudeData.put("riderDisplayName", currentRiderName);
+        attitudeData.put("riderDisplayName", displayName);
         return attitudeData;
     }
 
     /**
      * Log data transmission (throttled to avoid spam)
      */
-    private void logDataTransmission(long currentTime) {
+    private void logDataTransmission(long currentTime, String displayName) {
         if (currentTime % 1000 < SEND_INTERVAL) {
             Log.d(TAG, String.format("Sent [%s]: P=%.1f°, Y=%.1f°, R=%.1f°",
-                    currentRiderName, currentPitch, currentYaw, currentRoll));
-        }
-    }
-
-    // ========================================
-    // RIDER MANAGEMENT
-    // ========================================
-
-    /**
-     * Fetch rider information from API
-     */
-    private void fetchRiderFromAPI() {
-        executorService.execute(() -> {
-            try {
-                Log.d(TAG, "Fetching rider from API: " + RIDER_API_URL);
-
-                JSONObject jsonResponse = makeApiRequest();
-                if (jsonResponse != null) {
-                    processApiResponse(jsonResponse);
-                } else {
-                    runOnUiThread(this::useFallbackRider);
-                }
-
-            } catch (Exception e) {
-                Log.e(TAG, "Error fetching rider from API", e);
-                runOnUiThread(this::useFallbackRider);
-            }
-        });
-    }
-
-    /**
-     * Make HTTP request to rider API
-     */
-    private JSONObject makeApiRequest() throws Exception {
-        URL url = new URL(RIDER_API_URL);
-        HttpURLConnection connection = (HttpURLConnection) url.openConnection();
-        connection.setRequestMethod("GET");
-        connection.setConnectTimeout(5000);
-        connection.setReadTimeout(5000);
-
-        int responseCode = connection.getResponseCode();
-        if (responseCode == HttpURLConnection.HTTP_OK) {
-            BufferedReader reader = new BufferedReader(
-                    new InputStreamReader(connection.getInputStream()));
-            StringBuilder response = new StringBuilder();
-            String line;
-
-            while ((line = reader.readLine()) != null) {
-                response.append(line);
-            }
-            reader.close();
-            connection.disconnect();
-
-            return new JSONObject(response.toString());
-        } else {
-            Log.e(TAG, "API request failed with code: " + responseCode);
-            connection.disconnect();
-            return null;
-        }
-    }
-
-    /**
-     * Process successful API response
-     */
-    private void processApiResponse(JSONObject jsonResponse) {
-        String appId = jsonResponse.optString("appId", "");
-        String rider = jsonResponse.optString("rider", "");
-
-        runOnUiThread(() -> {
-            if (!rider.isEmpty()) {
-                currentRiderName = rider;
-                currentAppId = appId;
-                lastRiderFetchTime = System.currentTimeMillis();
-                Log.d(TAG, "✓ Fetched rider from API: " + rider + " (" + appId + ")");
-
-                if (dialView != null) {
-                    dialView.invalidate();
-                }
-            } else {
-                Log.w(TAG, "Empty rider name from API, using fallback");
-                useFallbackRider();
-            }
-        });
-    }
-
-    /**
-     * Use random fallback rider when API is unavailable
-     */
-    private void useFallbackRider() {
-        if (currentRiderName.isEmpty()) {
-            currentRiderName = fallbackRiders[random.nextInt(fallbackRiders.length)];
-            currentAppId = "fallback_rider";
-            Log.d(TAG, "Using fallback rider: " + currentRiderName);
-        }
-    }
-
-    /**
-     * Check if rider data needs updating and fetch if necessary
-     */
-    private void checkAndUpdateRider() {
-        long currentTime = System.currentTimeMillis();
-        boolean needsUpdate = currentRiderName.isEmpty() ||
-                (currentTime - lastRiderFetchTime > RIDER_FETCH_INTERVAL);
-
-        if (needsUpdate) {
-            fetchRiderFromAPI();
-        }
-    }
-
-    /**
-     * Ensure we have a rider name (use fallback if needed)
-     */
-    private void ensureRiderNameExists() {
-        if (currentRiderName.isEmpty()) {
-            useFallbackRider();
+                    displayName, currentPitch, currentYaw, currentRoll));
         }
     }
 
@@ -641,9 +510,6 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         if (socket != null) {
             socket.disconnect();
             Log.d(TAG, "Socket disconnected in onDestroy");
-        }
-        if (executorService != null) {
-            executorService.shutdown();
         }
     }
 
@@ -773,15 +639,11 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
          * Draw rider information at the top
          */
         private void drawRiderInformation(Canvas canvas, int width) {
-            // Main rider name from API
-            if (!currentRiderName.isEmpty()) {
-                Paint topPaint = createRiderNamePaint(Color.BLUE, 40);
-                canvas.drawText("Rider: " + currentRiderName, width / 2, 50, topPaint);
+            // Display the user's rider name
+            if (riderName != null && !riderName.isEmpty()) {
+                Paint riderPaint = createRiderNamePaint(Color.BLUE, 40);
+                canvas.drawText("Rider on Course: " + riderName, width / 2, 50, riderPaint);
             }
-
-            // Test rider name (development feature)
-            Paint testPaint = createRiderNamePaint(Color.MAGENTA, 32);
-            canvas.drawText("RIDER: " + riderName, width / 2, 85, testPaint);
         }
 
         /**
