@@ -129,6 +129,8 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
      */
     private void initializeDeviceAndRider() {
         SharedPreferences prefs = getSharedPreferences("app_prefs", MODE_PRIVATE);
+        // Optional: Clear previous rider name for testing
+        //prefs.edit().remove("rider_name").apply();
 
         // Initialize device ID
         initializeDeviceId(prefs);
