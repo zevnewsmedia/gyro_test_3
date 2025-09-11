@@ -86,23 +86,32 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         super.onCreate(savedInstanceState);
 
         SharedPreferences prefs = getSharedPreferences("app_prefs", MODE_PRIVATE);
-        // Optional: Clear previous rider name for testing
-         prefs.edit().remove("rider_name").apply();
+        // Optional: Clear previous rider name for testing - COMMENTED OUT to allow rider name persistence
+        // prefs.edit().remove("rider_name").apply();
 
         // --- Device ID ---
+        // Check if device ID was already stored in SharedPreferences
         deviceId = prefs.getString("device_id", null);
-        if (deviceId == null) {
-            // Generate new UUID if none exists
+
+        if (deviceId == null || deviceId.isEmpty()) {
+            // Device ID not found - generate new UUID and store it
             deviceId = UUID.randomUUID().toString();
             prefs.edit().putString("device_id", deviceId).apply();
+            Log.d("DeviceID", "New device ID generated and stored: " + deviceId);
+        } else {
+            // Device ID already exists - use the stored one
+            Log.d("DeviceID", "Existing device ID found: " + deviceId);
         }
 
         // --- Rider Name ---
+        // Check if rider name was already set in SharedPreferences
         riderName = prefs.getString("rider_name", null);
-        if (riderName == null) {
-            // Show a dialog to ask the user for their name
+
+        if (riderName == null || riderName.isEmpty()) {
+            // Rider name not set - show dialog to ask user for their name
             AlertDialog.Builder builder = new AlertDialog.Builder(this);
             builder.setTitle("Enter your name");
+            builder.setCancelable(false); // Prevent dismissing by touching outside or back button
 
             final EditText input = new EditText(this);
             input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PERSON_NAME);
@@ -113,27 +122,19 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
                 if (!name.isEmpty()) {
                     riderName = name;
                 } else {
-                    riderName = "New Rider"; // fallback
+                    riderName = "New Rider"; // fallback if user enters empty text
                 }
+                // Save the rider name to SharedPreferences for future app launches
                 prefs.edit().putString("rider_name", riderName).apply();
 
-                Log.d("RiderName", riderName);
-                Log.d("DeviceID", deviceId);
-            });
-
-            builder.setNegativeButton("Cancel", (dialog, which) -> {
-                dialog.cancel();
-                riderName = "New Rider"; // fallback
-                prefs.edit().putString("rider_name", riderName).apply();
-
-                Log.d("RiderName", riderName);
+                Log.d("RiderName", "New rider name entered: " + riderName);
                 Log.d("DeviceID", deviceId);
             });
 
             builder.show();
         } else {
-            // Rider already stored
-            Log.d("RiderName", riderName);
+            // Rider name already exists in SharedPreferences - no need to show dialog
+            Log.d("RiderName", "Existing rider name found: " + riderName);
             Log.d("DeviceID", deviceId);
         }
 
