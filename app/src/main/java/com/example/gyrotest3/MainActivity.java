@@ -18,18 +18,12 @@ import androidx.appcompat.app.AppCompatActivity;
 
 import io.socket.client.IO;
 import io.socket.client.Socket;
-import io.socket.emitter.Emitter;
+
 import org.json.JSONException;
 import org.json.JSONObject;
 
-import java.io.BufferedReader;
-import java.io.InputStreamReader;
-import java.net.HttpURLConnection;
-import java.net.URL;
 import java.net.URISyntaxException;
-import java.util.Random;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+
 import android.content.SharedPreferences;
 import java.util.UUID;
 import androidx.appcompat.app.AlertDialog;
@@ -39,8 +33,6 @@ import android.text.InputType;
 // Add these imports at the top of your MainActivity class
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
-import android.graphics.drawable.Drawable;
-import androidx.core.content.ContextCompat;
 
 /**
  * MainActivity - Android Gyroscope Data Transmission App
@@ -558,7 +550,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             super(context);
 
             // Load the logo bitmap from drawable
-            logoBitmap = BitmapFactory.decodeResource(context.getResources(), R.drawable.logo);
+            logoBitmap = BitmapFactory.decodeResource(context.getResources(), R.drawable.logo_or);
 
             // Initialize all paint objects
             backgroundPaint = createBackgroundPaint();
@@ -770,7 +762,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             canvas.drawText("Range: ±90°", centerX, centerY + 50, textPaint);
 
             // Title above circle
-            titlePaint.setTextSize(18);
+            titlePaint.setTextSize(30);
             canvas.drawText("TILT (TURNUP)", centerX, centerY - radius - 20, titlePaint);
         }
 
@@ -797,7 +789,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             canvas.drawText("Range: ±90°", centerX, centerY + 50, textPaint);
 
             // Title above circle
-            titlePaint.setTextSize(18);
+            titlePaint.setTextSize(30);
             canvas.drawText("LEAN (TABLE TOP)", centerX, centerY - radius - 20, titlePaint);
         }
 
@@ -820,7 +812,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             valuePaint.setColor(Color.rgb(33, 33, 33)); // Reset color
 
             // Title above circle
-            titlePaint.setTextSize(18);
+            titlePaint.setTextSize(30);
             canvas.drawText("TURN (TURNDOWN)", centerX, centerY - radius - 20, titlePaint);
         }
 
