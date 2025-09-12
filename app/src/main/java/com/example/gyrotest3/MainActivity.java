@@ -714,10 +714,12 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
             // Draw rider name
             if (riderName != null && !riderName.isEmpty()) {
-                textPaint.setTextSize(24);
+                currentY += 50; // ← ADD THIS: Creates 50px margin ABOVE the text
+
+                textPaint.setTextSize(44);
                 textPaint.setColor(Color.rgb(158, 158, 158));
-                canvas.drawText("Rider: " + riderName, width / 2, currentY, textPaint);
-                currentY += 40;
+                canvas.drawText("RIDER: " + riderName.toUpperCase(), width / 2, currentY, textPaint);
+                currentY += 40; // Space after the text
             }
 
             return currentY;
