@@ -38,6 +38,10 @@ dependencies {
     // Your existing dependencies...
     implementation 'io.socket:socket.io-client:2.0.0'
 
+    implementation 'androidx.core:core:1.7.0' // or higher
+        // ... your other dependencies
+
+
     // If you get compatibility issues, try this newer version instead:
     // implementation 'io.socket:socket.io-client:2.0.1'
 }

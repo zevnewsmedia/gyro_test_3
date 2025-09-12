@@ -5,6 +5,7 @@ import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
+import android.graphics.Typeface;
 import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
@@ -37,15 +38,16 @@ import android.graphics.BitmapFactory;
 /**
  * MainActivity - Android Gyroscope Data Transmission App
  *
- * This application reads accelerometer data, displays it in custom dials,
+ * This application reads accelerometer and magnetometer data, displays it in custom dials,
  * and transmits the attitude data to a remote server via Socket.IO.
  *
  * Features:
- * - Real-time accelerometer data visualization
+ * - Real-time accelerometer and magnetometer data visualization
  * - Socket.IO connection for data transmission
  * - User rider name management
  * - Custom dial view for pitch, roll, and yaw display
  * - Landscape orientation lock
+ * - Graceful degradation when magnetometer is not available
  */
 public class MainActivity extends AppCompatActivity implements SensorEventListener {
 
@@ -70,12 +72,21 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
     private SensorManager sensorManager;
     private Sensor accelerometer;
+    private Sensor magnetometer;
     private GyroDialView dialView;
-    private float currentYaw = 0;    // Always 0 for accelerometer (requires magnetometer)
+    private float currentYaw = 0;    // Compass heading (requires magnetometer)
     private float currentPitch = 0;  // Forward/backward tilt
     private float currentRoll = 0;   // Left/right tilt
     private boolean dialActive = false;
     private String availableMotionSensors = "";
+
+    // Sensor data storage for orientation calculation
+    private float[] accelerometerValues = new float[3];
+    private float[] magnetometerValues = new float[3];
+    private boolean hasAccelerometerData = false;
+    private boolean hasMagnetometerData = false;
+    private float[] rotationMatrix = new float[9];
+    private float[] orientationValues = new float[3];
 
     // ========================================
     // NETWORK & SOCKET.IO
@@ -92,7 +103,6 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-
 
         initializeDeviceAndRider();
         setupUI();
@@ -224,24 +234,39 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     // ========================================
 
     /**
-     * Initialize sensor manager and accelerometer
+     * Initialize sensor manager, accelerometer, and magnetometer
      */
     private void initializeSensors() {
         sensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
         listAvailableMotionSensors();
 
         accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
+        magnetometer = sensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD);
+
         if (accelerometer == null) {
             showToast("Accelerometer not available", Toast.LENGTH_LONG);
+        }
+
+        if (magnetometer == null) {
+            Log.w(TAG, "Magnetometer not available - Yaw will not work");
+            showToast("Magnetometer not available - Yaw disabled", Toast.LENGTH_SHORT);
+        } else {
+            Log.d(TAG, "Magnetometer available - Full orientation tracking enabled");
         }
     }
 
     /**
-     * Register sensor listener for accelerometer updates
+     * Register sensor listeners for available sensors
      */
     private void registerSensorListener() {
         if (accelerometer != null && sensorManager != null) {
             sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_UI);
+            Log.d(TAG, "Accelerometer listener registered");
+        }
+
+        if (magnetometer != null && sensorManager != null) {
+            sensorManager.registerListener(this, magnetometer, SensorManager.SENSOR_DELAY_UI);
+            Log.d(TAG, "Magnetometer listener registered");
         }
     }
 
@@ -321,13 +346,26 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     @Override
     public void onSensorChanged(SensorEvent event) {
         if (event.sensor.getType() == Sensor.TYPE_ACCELEROMETER) {
+            System.arraycopy(event.values, 0, accelerometerValues, 0, 3);
+            hasAccelerometerData = true;
             processAccelerometerData(event.values);
+        } else if (event.sensor.getType() == Sensor.TYPE_MAGNETIC_FIELD) {
+            System.arraycopy(event.values, 0, magnetometerValues, 0, 3);
+            hasMagnetometerData = true;
+        }
+
+        // Calculate orientation if we have both sensors
+        if (hasAccelerometerData && hasMagnetometerData) {
+            calculateOrientation();
         }
     }
 
     @Override
     public void onAccuracyChanged(Sensor sensor, int accuracy) {
-        // Not used in this implementation
+        // Log accuracy changes for debugging
+        String sensorName = (sensor.getType() == Sensor.TYPE_ACCELEROMETER) ? "Accelerometer" :
+                (sensor.getType() == Sensor.TYPE_MAGNETIC_FIELD) ? "Magnetometer" : "Unknown";
+        Log.d(TAG, sensorName + " accuracy changed to: " + accuracy);
     }
 
     /**
@@ -341,10 +379,45 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         // Calculate tilt angles from gravity vector (adjusted for landscape mode)
         currentRoll = (float) Math.toDegrees(Math.atan2(-y, Math.sqrt(x * x + z * z)));
         currentPitch = (float) Math.toDegrees(Math.atan2(x, Math.sqrt(y * y + z * z)));
-        currentYaw = 0; // Cannot be determined from accelerometer alone
+
+        // If magnetometer is not available, keep yaw at 0
+        if (magnetometer == null) {
+            currentYaw = 0;
+        }
 
         updateDialView();
         sendAttitudeData();
+    }
+
+    /**
+     * Calculate orientation using both accelerometer and magnetometer
+     */
+    private void calculateOrientation() {
+        // Get rotation matrix from accelerometer and magnetometer
+        if (SensorManager.getRotationMatrix(rotationMatrix, null, accelerometerValues, magnetometerValues)) {
+            // Get orientation values (azimuth, pitch, roll)
+            SensorManager.getOrientation(rotationMatrix, orientationValues);
+
+            // Convert from radians to degrees
+            float azimuth = (float) Math.toDegrees(orientationValues[0]); // Yaw
+            float pitch = (float) Math.toDegrees(orientationValues[1]);   // Pitch
+            float roll = (float) Math.toDegrees(orientationValues[2]);    // Roll
+
+            // Normalize azimuth to 0-360 degrees
+            if (azimuth < 0) {
+                azimuth += 360;
+            }
+
+            // Update yaw (azimuth) - now we have real compass heading!
+            currentYaw = azimuth;
+
+            // You can also use the calculated pitch and roll if you prefer them over accelerometer-only calculations
+            // currentPitch = pitch;
+            // currentRoll = roll;
+
+            updateDialView();
+            sendAttitudeData();
+        }
     }
 
     /**
@@ -520,12 +593,9 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
     /**
      * Custom view class for displaying gyroscope data with three circular dials
-     * Shows Yaw (not available), Pitch, and Roll with visual indicators
-     */
-    /**
-     * Custom view class for displaying gyroscope data with three circular dials
-     * Shows Yaw (not available), Pitch, and Roll with visual indicators
+     * Shows Yaw, Pitch, and Roll with visual indicators
      * All content is vertically centered in the view
+     * Gracefully handles missing magnetometer
      */
     private class GyroDialView extends View {
 
@@ -548,7 +618,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         private final int[] gaugeColors = {
                 Color.rgb(33, 150, 243),   // Blue for Pitch
                 Color.rgb(255, 193, 7),    // Amber/Yellow for Roll
-                Color.rgb(158, 158, 158)   // Gray for YAW (N/A)
+                Color.rgb(158, 158, 158)   // Gray for YAW when N/A, will be changed to green when available
         };
 
         public GyroDialView(Context context) {
@@ -570,7 +640,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             setBackgroundColor(Color.WHITE);
         }
 
-        // Paint factory methods remain the same
+        // Paint factory methods
         private Paint createBackgroundPaint() {
             Paint paint = new Paint();
             paint.setColor(Color.WHITE);
@@ -600,9 +670,10 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         private Paint createTextPaint() {
             Paint paint = new Paint();
             paint.setColor(Color.rgb(158, 158, 158));
-            paint.setTextSize(24);
+            paint.setTextSize(90);
             paint.setTextAlign(Paint.Align.CENTER);
             paint.setAntiAlias(true);
+            paint.setTypeface(Typeface.create("sans-serif", Typeface.NORMAL));
             return paint;
         }
 
@@ -627,7 +698,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         private Paint createTitlePaint() {
             Paint paint = new Paint();
             paint.setColor(Color.rgb(33, 33, 33));
-            paint.setTextSize(28);
+            paint.setTextSize(70);
             paint.setTextAlign(Paint.Align.CENTER);
             paint.setAntiAlias(true);
             paint.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
@@ -714,7 +785,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
             // Draw rider name
             if (riderName != null && !riderName.isEmpty()) {
-                currentY += 50; // ← ADD THIS: Creates 50px margin ABOVE the text
+                currentY += 50; // Creates 50px margin ABOVE the text
 
                 textPaint.setTextSize(44);
                 textPaint.setColor(Color.rgb(158, 158, 158));
@@ -822,22 +893,41 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         }
 
         /**
-         * Draw yaw circle (shows N/A)
+         * Draw yaw circle - shows actual compass heading when magnetometer is available
          */
         private void drawYawCircle(Canvas canvas, int centerX, int centerY, int radius) {
-            // Draw empty circle for yaw (not available)
-            drawDirectionalProgressCircle(canvas, centerX, centerY, radius, 0f, gaugeColors[2], true);
+            if (magnetometer == null) {
+                // Draw empty circle for yaw (not available)
+                drawDirectionalProgressCircle(canvas, centerX, centerY, radius, 0f, gaugeColors[2], true);
 
-            // Draw N/A text
-            valuePaint.setTextSize(36);
-            valuePaint.setColor(Color.rgb(158, 158, 158));
-            canvas.drawText("N/A", centerX, centerY + 8, valuePaint);
+                // Draw N/A text
+                valuePaint.setTextSize(36);
+                valuePaint.setColor(Color.rgb(158, 158, 158));
+                canvas.drawText("N/A", centerX, centerY + 8, valuePaint);
 
-            textPaint.setTextSize(14);
-            canvas.drawText("Magnetometer", centerX, centerY + 30, textPaint);
-            canvas.drawText("Required", centerX, centerY + 48, textPaint);
+                textPaint.setTextSize(14);
+                canvas.drawText("Magnetometer", centerX, centerY + 30, textPaint);
+                canvas.drawText("Not Available", centerX, centerY + 48, textPaint);
 
-            valuePaint.setColor(Color.rgb(33, 33, 33)); // Reset color
+                valuePaint.setColor(Color.rgb(33, 33, 33)); // Reset color
+            } else {
+                // Magnetometer is available - show yaw as compass heading
+                int yawColor = Color.rgb(76, 175, 80); // Green for active yaw
+
+                // Normalize yaw to 0-100% for visual representation
+                float normalizedYaw = currentYaw / 360f;
+
+                drawYawProgressCircle(canvas, centerX, centerY, radius, currentYaw, yawColor);
+
+                // Draw value and labels
+                valuePaint.setTextSize(48);
+                canvas.drawText(String.format("%.0f", currentYaw), centerX, centerY + 8, valuePaint);
+
+                textPaint.setTextSize(16);
+                canvas.drawText("degrees", centerX, centerY + 30, textPaint);
+                textPaint.setTextSize(14);
+                canvas.drawText("Range: 0-360°", centerX, centerY + 50, textPaint);
+            }
 
             // Title above circle
             titlePaint.setTextSize(24);
@@ -877,6 +967,54 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
                     );
                 }
             }
+        }
+
+        /**
+         * Draw yaw as a compass-style progress circle (full 360° range)
+         */
+        private void drawYawProgressCircle(Canvas canvas, int centerX, int centerY, int radius, float yaw, int color) {
+            // Draw background circle
+            canvas.drawCircle(centerX, centerY, radius, backgroundCirclePaint);
+
+            // Draw compass needle/indicator
+            progressPaint.setColor(color);
+
+            // Calculate the angle for the compass needle
+            // Start from North (top) and rotate based on yaw
+            float needleAngle = yaw - 90f; // -90 to start from top instead of right
+
+            // Draw a thicker arc to represent the compass direction
+            canvas.drawArc(
+                    centerX - radius, centerY - radius,
+                    centerX + radius, centerY + radius,
+                    needleAngle - 5, 10, false, progressPaint // 10-degree wide indicator
+            );
+
+            // Optional: Draw a small circle at center to represent compass center
+            Paint centerDotPaint = new Paint();
+            centerDotPaint.setColor(color);
+            centerDotPaint.setStyle(Paint.Style.FILL);
+            centerDotPaint.setAntiAlias(true);
+            canvas.drawCircle(centerX, centerY, 8, centerDotPaint);
+
+            // Draw cardinal direction markers (N, E, S, W)
+            Paint cardinalPaint = new Paint();
+            cardinalPaint.setColor(Color.rgb(158, 158, 158));
+            cardinalPaint.setTextSize(16);
+            cardinalPaint.setTextAlign(Paint.Align.CENTER);
+            cardinalPaint.setAntiAlias(true);
+
+            // North
+            canvas.drawText("N", centerX, centerY - radius - 10, cardinalPaint);
+            // East
+            cardinalPaint.setTextAlign(Paint.Align.LEFT);
+            canvas.drawText("E", centerX + radius + 10, centerY + 5, cardinalPaint);
+            // South
+            cardinalPaint.setTextAlign(Paint.Align.CENTER);
+            canvas.drawText("S", centerX, centerY + radius + 25, cardinalPaint);
+            // West
+            cardinalPaint.setTextAlign(Paint.Align.RIGHT);
+            canvas.drawText("W", centerX - radius - 10, centerY + 5, cardinalPaint);
         }
     }
 }
