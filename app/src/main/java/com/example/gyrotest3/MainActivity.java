@@ -522,6 +522,11 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
      * Custom view class for displaying gyroscope data with three circular dials
      * Shows Yaw (not available), Pitch, and Roll with visual indicators
      */
+    /**
+     * Custom view class for displaying gyroscope data with three circular dials
+     * Shows Yaw (not available), Pitch, and Roll with visual indicators
+     * All content is vertically centered in the view
+     */
     private class GyroDialView extends View {
 
         // Paint objects for different UI elements
@@ -565,7 +570,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             setBackgroundColor(Color.WHITE);
         }
 
-        // Paint factory methods
+        // Paint factory methods remain the same
         private Paint createBackgroundPaint() {
             Paint paint = new Paint();
             paint.setColor(Color.WHITE);
@@ -575,7 +580,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
         private Paint createBackgroundCirclePaint() {
             Paint paint = new Paint();
-            paint.setColor(Color.rgb(230, 230, 230)); // Light gray background circle
+            paint.setColor(Color.rgb(230, 230, 230));
             paint.setStyle(Paint.Style.STROKE);
             paint.setStrokeWidth(20);
             paint.setStrokeCap(Paint.Cap.ROUND);
@@ -666,67 +671,86 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             // Clear background
             canvas.drawRect(0, 0, width, height, backgroundPaint);
 
-            // Draw UI elements
-            drawHeader(canvas, width);
-            drawConnectionStatus(canvas, 30, 120);
-            drawCleanProgressCircles(canvas, width, height);
-            drawLegend(canvas, width, height);
+            // Calculate total content height to center everything vertically
+            int logoHeight = (logoBitmap != null) ? 94 : 0;
+            int riderNameHeight = (riderName != null && !riderName.isEmpty()) ? 40 : 0;
+            int circleRadius = Math.min(width / 6, height / 4) - 20;
+            int circleAreaHeight = circleRadius * 2 + 100; // Circle + titles + labels
+            int connectionStatusHeight = 30;
+
+            int totalContentHeight = logoHeight + riderNameHeight + circleAreaHeight + connectionStatusHeight + 60; // 60 for spacing
+
+            // Calculate starting Y position to center all content
+            int startY = Math.max(20, (height - totalContentHeight) / 2);
+
+            int currentY = startY;
+
+            // Draw all components with calculated positions
+            currentY = drawCenteredHeader(canvas, width, currentY);
+            currentY = drawCenteredConnectionStatus(canvas, width, currentY);
+            currentY = drawCenteredProgressCircles(canvas, width, currentY, circleRadius);
         }
 
         /**
-         * Draw header with logo and rider name
+         * Draw header with logo and rider name (centered)
          */
-        private void drawHeader(Canvas canvas, int width) {
-            int currentY = 10; // Start position
+        private int drawCenteredHeader(Canvas canvas, int width, int startY) {
+            int currentY = startY;
 
             // Draw logo at the top if available
             if (logoBitmap != null) {
-                int logoWidth = 360;   // Wide logo
-                int logoHeight = 94;  // Shorter height
+                int logoWidth = 360;
+                int logoHeight = 94;
 
                 // Scale bitmap to desired size
                 Bitmap scaledLogo = Bitmap.createScaledBitmap(logoBitmap, logoWidth, logoHeight, true);
 
-                // Draw logo centered at top
+                // Draw logo centered
                 int logoX = (width - logoWidth) / 2;
                 canvas.drawBitmap(scaledLogo, logoX, currentY, null);
 
-                currentY += logoHeight + 10; // Move down for next elements
+                currentY += logoHeight + 20;
             }
-
-            // Draw title
-            titlePaint.setTextSize(32);
-            titlePaint.setColor(Color.rgb(33, 33, 33));
-          //  canvas.drawText("Gyroscope Data", width / 2, currentY + 30, titlePaint);
-            currentY += 40;
 
             // Draw rider name
             if (riderName != null && !riderName.isEmpty()) {
-                textPaint.setTextSize(120);
+                textPaint.setTextSize(24);
                 textPaint.setColor(Color.rgb(158, 158, 158));
-                canvas.drawText("Rider: " + riderName, width / 2, currentY + 20, textPaint);
+                canvas.drawText("Rider: " + riderName, width / 2, currentY, textPaint);
+                currentY += 40;
             }
+
+            return currentY;
         }
 
         /**
-         * Draw connection status
+         * Draw connection status (centered)
          */
-        private void drawConnectionStatus(Canvas canvas, int x, int y) {
+        private int drawCenteredConnectionStatus(Canvas canvas, int width, int startY) {
+            // Center the connection status horizontally
+            String statusText;
+            int statusColor;
+
             if (connected) {
-                statusPaint.setColor(Color.rgb(76, 175, 80));
-                canvas.drawText("● Connected", x, y, statusPaint);
+                statusText = "● Connected";
+                statusColor = Color.rgb(76, 175, 80);
             } else {
-                statusPaint.setColor(Color.rgb(244, 67, 54));
-                canvas.drawText("● Disconnected", x, y, statusPaint);
+                statusText = "● Disconnected";
+                statusColor = Color.rgb(244, 67, 54);
             }
+
+            statusPaint.setColor(statusColor);
+            statusPaint.setTextAlign(Paint.Align.CENTER); // Center align the status text
+            canvas.drawText(statusText, width / 2, startY, statusPaint);
+
+            return startY + 40;
         }
 
         /**
-         * Draw three clean progress circles
+         * Draw three clean progress circles (centered)
          */
-        private void drawCleanProgressCircles(Canvas canvas, int width, int height) {
-            int circleRadius = Math.min(width / 6, height / 4) - 20;
-            int centerY = height / 2 + 10; // Moved down slightly to accommodate logo
+        private int drawCenteredProgressCircles(Canvas canvas, int width, int startY, int circleRadius) {
+            int centerY = startY + circleRadius + 60; // Add space for titles above circles
 
             // Calculate positions for three circles
             int leftX = width / 4;
@@ -737,6 +761,8 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             drawPitchCircle(canvas, leftX, centerY, circleRadius);
             drawRollCircle(canvas, centerX, centerY, circleRadius);
             drawYawCircle(canvas, rightX, centerY, circleRadius);
+
+            return centerY + circleRadius + 80; // Return position after circles
         }
 
         /**
@@ -744,7 +770,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
          */
         private void drawPitchCircle(Canvas canvas, int centerX, int centerY, int radius) {
             // Normalize pitch to 0-100% (assuming ±90° range)
-            float normalizedPitch = Math.abs(currentPitch) / 90f; // 0.0 to 1.0
+            float normalizedPitch = Math.abs(currentPitch) / 90f;
             normalizedPitch = Math.min(1.0f, normalizedPitch);
 
             // Determine direction based on sign
@@ -762,8 +788,8 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             canvas.drawText("Range: ±90°", centerX, centerY + 50, textPaint);
 
             // Title above circle
-            titlePaint.setTextSize(30);
-            canvas.drawText("TILT (TURNUP)", centerX, centerY - radius - 20, titlePaint);
+            titlePaint.setTextSize(24);
+            canvas.drawText("TILT (TURNUP)", centerX, centerY - radius - 50, titlePaint);
         }
 
         /**
@@ -771,7 +797,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
          */
         private void drawRollCircle(Canvas canvas, int centerX, int centerY, int radius) {
             // Normalize roll to 0-100% (assuming ±90° range)
-            float normalizedRoll = Math.abs(currentRoll) / 90f; // 0.0 to 1.0
+            float normalizedRoll = Math.abs(currentRoll) / 90f;
             normalizedRoll = Math.min(1.0f, normalizedRoll);
 
             // Determine direction based on sign
@@ -789,8 +815,8 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             canvas.drawText("Range: ±90°", centerX, centerY + 50, textPaint);
 
             // Title above circle
-            titlePaint.setTextSize(30);
-            canvas.drawText("LEAN (TABLE TOP)", centerX, centerY - radius - 20, titlePaint);
+            titlePaint.setTextSize(24);
+            canvas.drawText("LEAN (TABLE TOP)", centerX, centerY - radius - 50, titlePaint);
         }
 
         /**
@@ -812,8 +838,8 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             valuePaint.setColor(Color.rgb(33, 33, 33)); // Reset color
 
             // Title above circle
-            titlePaint.setTextSize(30);
-            canvas.drawText("TURN (TURNDOWN)", centerX, centerY - radius - 20, titlePaint);
+            titlePaint.setTextSize(24);
+            canvas.drawText("TURN (TURNDOWN)", centerX, centerY - radius - 50, titlePaint);
         }
 
         /**
@@ -849,35 +875,6 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
                     );
                 }
             }
-        }
-
-        /**
-         * Draw legend at bottom
-         */
-        private void drawLegend(Canvas canvas, int width, int height) {
-            int legendY = height - 60;
-            int legendSpacing = width / 3;
-
-            // Draw colored dots and labels
-            Paint dotPaint = new Paint();
-            dotPaint.setStyle(Paint.Style.FILL);
-            dotPaint.setAntiAlias(true);
-
-            // Pitch legend
-            dotPaint.setColor(gaugeColors[0]);
-            //canvas.drawCircle(width / 4 - 60, legendY - 5, 8, dotPaint);
-            labelPaint.setColor(Color.rgb(33, 33, 33));
-            // canvas.drawText("pitch", width / 4 - 40, legendY, labelPaint);
-
-            // Roll legend
-            dotPaint.setColor(gaugeColors[1]);
-            //  canvas.drawCircle(width / 2 - 30, legendY - 5, 8, dotPaint);
-            //  canvas.drawText("roll", width / 2 - 10, legendY, labelPaint);
-
-            // Yaw legend
-            dotPaint.setColor(gaugeColors[2]);
-            // canvas.drawCircle(3 * width / 4 - 30, legendY - 5, 8, dotPaint);
-            //  canvas.drawText("yaw", 3 * width / 4 - 10, legendY, labelPaint);
         }
     }
 }
