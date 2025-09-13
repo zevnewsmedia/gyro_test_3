@@ -16,6 +16,7 @@ import android.view.View;
 import android.widget.Toast;
 import android.widget.Button;
 import android.widget.LinearLayout;
+import android.view.Gravity;
 
 import androidx.appcompat.app.AppCompatActivity;
 
@@ -232,13 +233,19 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         // Create connection button
         setupConnectionButton();
 
-        // Create and add custom dial view
+        // Create and add custom dial view (takes up most of the space)
         dialView = new GyroDialView(this);
+        LinearLayout.LayoutParams dialParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                0, // Height will be determined by weight
+                1.0f // Take up all remaining space
+        );
+        dialView.setLayoutParams(dialParams);
         dialActive = true;
 
         // Add views to layout
-        mainLayout.addView(connectionButton);
         mainLayout.addView(dialView);
+        mainLayout.addView(connectionButton);
 
         setContentView(mainLayout);
     }
@@ -250,7 +257,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         connectionButton = new Button(this);
         connectionButton.setText("CONNECT TO SERVER");
         connectionButton.setTextSize(16);
-        connectionButton.setBackgroundColor(Color.rgb(76, 175, 80)); // Green
+        connectionButton.setBackgroundColor(Color.BLUE); // Blue
         connectionButton.setTextColor(Color.WHITE);
         connectionButton.setPadding(20, 15, 20, 15);
 
@@ -298,7 +305,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
                 connectionButton.setBackgroundColor(Color.rgb(244, 67, 54)); // Red
             } else {
                 connectionButton.setText("CONNECT TO SERVER");
-                connectionButton.setBackgroundColor(Color.rgb(76, 175, 80)); // Green
+                connectionButton.setBackgroundColor(Color.BLUE);
             }
         });
     }
