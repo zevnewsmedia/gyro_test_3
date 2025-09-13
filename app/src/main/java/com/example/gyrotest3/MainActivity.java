@@ -14,6 +14,8 @@ import android.os.Bundle;
 import android.util.Log;
 import android.view.View;
 import android.widget.Toast;
+import android.widget.Button;
+import android.widget.LinearLayout;
 
 import androidx.appcompat.app.AppCompatActivity;
 
@@ -43,7 +45,7 @@ import android.graphics.BitmapFactory;
  *
  * Features:
  * - Real-time accelerometer and magnetometer data visualization
- * - Socket.IO connection for data transmission
+ * - Manual Socket.IO connection with connect/disconnect button
  * - User rider name management
  * - Custom dial view for pitch, roll, and yaw display
  * - Landscape orientation lock
@@ -97,6 +99,13 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     private long lastSendTime = 0;
 
     // ========================================
+    // UI COMPONENTS
+    // ========================================
+
+    private Button connectionButton;
+    private LinearLayout mainLayout;
+
+    // ========================================
     // LIFECYCLE METHODS
     // ========================================
 
@@ -107,14 +116,14 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         initializeDeviceAndRider();
         setupUI();
         initializeComponents();
-        connectToServer();
+        // Removed automatic connection - now manual via button
     }
 
     @Override
     protected void onResume() {
         super.onResume();
         registerSensorListener();
-        reconnectSocketIfNeeded();
+        // Removed automatic socket reconnection
     }
 
     @Override
@@ -215,10 +224,45 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         // Lock to landscape orientation
         setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
 
-        // Create and set custom dial view
+        // Create main layout
+        mainLayout = new LinearLayout(this);
+        mainLayout.setOrientation(LinearLayout.VERTICAL);
+        mainLayout.setBackgroundColor(Color.WHITE);
+
+        // Create connection button
+        setupConnectionButton();
+
+        // Create and add custom dial view
         dialView = new GyroDialView(this);
-        setContentView(dialView);
         dialActive = true;
+
+        // Add views to layout
+        mainLayout.addView(connectionButton);
+        mainLayout.addView(dialView);
+
+        setContentView(mainLayout);
+    }
+
+    /**
+     * Setup the connection/disconnection button
+     */
+    private void setupConnectionButton() {
+        connectionButton = new Button(this);
+        connectionButton.setText("CONNECT TO SERVER");
+        connectionButton.setTextSize(16);
+        connectionButton.setBackgroundColor(Color.rgb(76, 175, 80)); // Green
+        connectionButton.setTextColor(Color.WHITE);
+        connectionButton.setPadding(20, 15, 20, 15);
+
+        // Set layout parameters for the button
+        LinearLayout.LayoutParams buttonParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+        );
+        buttonParams.setMargins(20, 10, 20, 10);
+        connectionButton.setLayoutParams(buttonParams);
+
+        connectionButton.setOnClickListener(v -> toggleConnection());
     }
 
     /**
@@ -227,6 +271,60 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     private void initializeComponents() {
         initializeSensors();
         initializeSocket();
+    }
+
+    // ========================================
+    // CONNECTION MANAGEMENT
+    // ========================================
+
+    /**
+     * Toggle connection state (connect/disconnect)
+     */
+    private void toggleConnection() {
+        if (socketConnected) {
+            disconnectFromServer();
+        } else {
+            connectToServer();
+        }
+    }
+
+    /**
+     * Update connection button appearance based on connection state
+     */
+    private void updateConnectionButton() {
+        runOnUiThread(() -> {
+            if (socketConnected) {
+                connectionButton.setText("DISCONNECT FROM SERVER");
+                connectionButton.setBackgroundColor(Color.rgb(244, 67, 54)); // Red
+            } else {
+                connectionButton.setText("CONNECT TO SERVER");
+                connectionButton.setBackgroundColor(Color.rgb(76, 175, 80)); // Green
+            }
+        });
+    }
+
+    /**
+     * Connect to server manually
+     */
+    private void connectToServer() {
+        if (socket != null && !socket.connected()) {
+            Log.d(TAG, "Connecting to server...");
+            connectionButton.setEnabled(false);
+            connectionButton.setText("CONNECTING...");
+            socket.connect();
+        }
+    }
+
+    /**
+     * Disconnect from server manually
+     */
+    private void disconnectFromServer() {
+        if (socket != null && socket.connected()) {
+            Log.d(TAG, "Disconnecting from server...");
+            connectionButton.setEnabled(false);
+            connectionButton.setText("DISCONNECTING...");
+            socket.disconnect();
+        }
     }
 
     // ========================================
@@ -465,6 +563,8 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             if (dialView != null) {
                 dialView.setConnectionStatus(true);
             }
+            updateConnectionButton();
+            connectionButton.setEnabled(true);
         }));
 
         socket.on(Socket.EVENT_DISCONNECT, args -> runOnUiThread(() -> {
@@ -474,6 +574,8 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             if (dialView != null) {
                 dialView.setConnectionStatus(false);
             }
+            updateConnectionButton();
+            connectionButton.setEnabled(true);
         }));
 
         socket.on(Socket.EVENT_CONNECT_ERROR, args -> runOnUiThread(() -> {
@@ -484,6 +586,8 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             if (dialView != null) {
                 dialView.setConnectionStatus(false);
             }
+            updateConnectionButton();
+            connectionButton.setEnabled(true);
         }));
 
         socket.on("attitude_data", args -> {
@@ -498,26 +602,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     }
 
     /**
-     * Connect to server if not already connected
-     */
-    private void connectToServer() {
-        if (socket != null && !socket.connected()) {
-            Log.d(TAG, "Connecting to server...");
-            socket.connect();
-        }
-    }
-
-    /**
-     * Reconnect socket if needed (called in onResume)
-     */
-    private void reconnectSocketIfNeeded() {
-        if (socket != null && !socket.connected()) {
-            connectToServer();
-        }
-    }
-
-    /**
-     * Send attitude data to server with throttling
+     * Send attitude data to server with throttling (only when connected)
      */
     private void sendAttitudeData() {
         if (socket == null || !socketConnected) {
