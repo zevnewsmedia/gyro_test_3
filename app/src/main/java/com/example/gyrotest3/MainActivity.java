@@ -1002,15 +1002,61 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             titlePaint.setTextSize(24);
             canvas.drawText("TILT (TURNUP)", centerX, centerY - radius - 50, titlePaint);
         }
+        /**
+         * Draw roll progress circle - bidirectional arcs from center sides
+         * Positive: arcs from right center (3 o'clock) going up and down
+         * Negative: arcs from left center (9 o'clock) going up and down
+         */
         private void drawRollCircle(Canvas canvas, int centerX, int centerY, int radius) {
+            // Draw background circle
+            canvas.drawCircle(centerX, centerY, radius, backgroundCirclePaint);
+
             // Normalize roll to 0-100% (assuming ±90° range)
             float normalizedRoll = Math.abs(currentRoll) / 90f;
             normalizedRoll = Math.min(1.0f, normalizedRoll);
 
-            // Determine direction based on sign
-            boolean isPositive = currentRoll >= 0;
+            // Draw progress arcs if there's any roll value
+            if (normalizedRoll > 0) {
+                progressPaint.setColor(gaugeColors[1]); // Amber/Yellow color for roll
 
-            drawDirectionalProgressCircle(canvas, centerX, centerY, radius, normalizedRoll, gaugeColors[1], isPositive);
+                // Calculate the sweep angle for each arc (max 90° per side)
+                float sweepAngle = normalizedRoll * 90f;
+
+                if (currentRoll >= 0) {
+                    // Positive roll: draw two arcs from right center (0°) going up and down
+
+                    // Upper arc: from 0° going counter-clockwise (upward)
+                    canvas.drawArc(
+                            centerX - radius, centerY - radius,
+                            centerX + radius, centerY + radius,
+                            0f - sweepAngle, sweepAngle, false, progressPaint
+                    );
+
+                    // Lower arc: from 0° going clockwise (downward)
+                    canvas.drawArc(
+                            centerX - radius, centerY - radius,
+                            centerX + radius, centerY + radius,
+                            0f, sweepAngle, false, progressPaint
+                    );
+
+                } else {
+                    // Negative roll: draw two arcs from left center (180°) going up and down
+
+                    // Upper arc: from 180° going clockwise (upward)
+                    canvas.drawArc(
+                            centerX - radius, centerY - radius,
+                            centerX + radius, centerY + radius,
+                            180f, sweepAngle, false, progressPaint
+                    );
+
+                    // Lower arc: from 180° going counter-clockwise (downward)
+                    canvas.drawArc(
+                            centerX - radius, centerY - radius,
+                            centerX + radius, centerY + radius,
+                            180f - sweepAngle, sweepAngle, false, progressPaint
+                    );
+                }
+            }
 
             // Draw value and labels (show actual value with sign)
             valuePaint.setTextSize(48);
@@ -1025,7 +1071,6 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             titlePaint.setTextSize(24);
             canvas.drawText("LEAN (TABLE TOP)", centerX, centerY - radius - 50, titlePaint);
         }
-
         /**
          * Draw yaw circle - shows actual compass heading when magnetometer is available
          */
