@@ -933,15 +933,61 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         /**
          * Draw pitch progress circle - moves left for negative, right for positive
          */
+        /**
+         * Draw pitch progress circle - bidirectional arcs from center points
+         * Positive: arcs from top center going left and right
+         * Negative: arcs from bottom center going left and right
+         */
         private void drawPitchCircle(Canvas canvas, int centerX, int centerY, int radius) {
+            // Draw background circle
+            canvas.drawCircle(centerX, centerY, radius, backgroundCirclePaint);
+
             // Normalize pitch to 0-100% (assuming ±90° range)
             float normalizedPitch = Math.abs(currentPitch) / 90f;
             normalizedPitch = Math.min(1.0f, normalizedPitch);
 
-            // Determine direction based on sign
-            boolean isPositive = currentPitch >= 0;
+            // Draw progress arcs if there's any pitch value
+            if (normalizedPitch > 0) {
+                progressPaint.setColor(gaugeColors[0]); // Blue color for pitch
 
-            drawDirectionalProgressCircle(canvas, centerX, centerY, radius, normalizedPitch, gaugeColors[0], isPositive);
+                // Calculate the sweep angle for each arc (max 90° per side)
+                float sweepAngle = normalizedPitch * 90f;
+
+                if (currentPitch >= 0) {
+                    // Positive pitch: draw two arcs from top center (-90°) going left and right
+
+                    // Left arc: from -90° going counter-clockwise
+                    canvas.drawArc(
+                            centerX - radius, centerY - radius,
+                            centerX + radius, centerY + radius,
+                            -90f - sweepAngle, sweepAngle, false, progressPaint
+                    );
+
+                    // Right arc: from -90° going clockwise
+                    canvas.drawArc(
+                            centerX - radius, centerY - radius,
+                            centerX + radius, centerY + radius,
+                            -90f, sweepAngle, false, progressPaint
+                    );
+
+                } else {
+                    // Negative pitch: draw two arcs from bottom center (90°) going left and right
+
+                    // Left arc: from 90° going clockwise (towards left)
+                    canvas.drawArc(
+                            centerX - radius, centerY - radius,
+                            centerX + radius, centerY + radius,
+                            90f, sweepAngle, false, progressPaint
+                    );
+
+                    // Right arc: from 90° going counter-clockwise (towards right)
+                    canvas.drawArc(
+                            centerX - radius, centerY - radius,
+                            centerX + radius, centerY + radius,
+                            90f - sweepAngle, sweepAngle, false, progressPaint
+                    );
+                }
+            }
 
             // Draw value and labels (show actual value with sign)
             valuePaint.setTextSize(48);
@@ -956,10 +1002,6 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             titlePaint.setTextSize(24);
             canvas.drawText("TILT (TURNUP)", centerX, centerY - radius - 50, titlePaint);
         }
-
-        /**
-         * Draw roll progress circle - moves left for negative, right for positive
-         */
         private void drawRollCircle(Canvas canvas, int centerX, int centerY, int radius) {
             // Normalize roll to 0-100% (assuming ±90° range)
             float normalizedRoll = Math.abs(currentRoll) / 90f;
