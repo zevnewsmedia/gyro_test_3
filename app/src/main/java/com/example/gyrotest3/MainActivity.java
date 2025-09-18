@@ -647,11 +647,15 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
                 String receivedDeviceId = data.getString("deviceId");
                 String newState = data.getString("state");
 
-                // Only update if it's for this device
                 if (deviceId.equals(receivedDeviceId)) {
                     deviceState = "on".equals(newState);
                     showToast("Device state changed to: " + newState, Toast.LENGTH_SHORT);
                     Log.d(TAG, "State updated from web: " + newState);
+
+                    // UPDATE THE DISPLAY
+                    if (dialView != null) {
+                        dialView.invalidate(); // Refresh the view to show new state
+                    }
                 }
             } catch (Exception e) {
                 Log.e(TAG, "Error parsing state update", e);
@@ -787,6 +791,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
      */
     private class GyroDialView extends View {
 
+
         // Paint objects for different UI elements
         private final Paint backgroundPaint;
         private final Paint backgroundCirclePaint;
@@ -808,6 +813,15 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
                 Color.rgb(255, 193, 7),    // Amber/Yellow for Roll
                 Color.rgb(158, 158, 158)   // Gray for YAW when N/A, will be changed to green when available
         };
+
+        /**
+         * Update device state and refresh display
+         */
+        public void setDeviceState(boolean state) {
+            // Access the outer class's deviceState variable directly
+            // No need for a local variable since we can access MainActivity.this.deviceState
+            invalidate();
+        }
 
         public GyroDialView(Context context) {
             super(context);
@@ -987,8 +1001,11 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         /**
          * Draw connection status (centered)
          */
+        /**
+         * Draw connection status and device state (centered)
+         */
         private int drawCenteredConnectionStatus(Canvas canvas, int width, int startY) {
-            // Center the connection status horizontally
+            // Connection status
             String statusText;
             int statusColor;
 
@@ -1001,12 +1018,22 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             }
 
             statusPaint.setColor(statusColor);
-            statusPaint.setTextAlign(Paint.Align.CENTER); // Center align the status text
+            statusPaint.setTextAlign(Paint.Align.CENTER);
             canvas.drawText(statusText, width / 2, startY, statusPaint);
+
+            // ADD DEVICE STATE DISPLAY
+            startY += 35; // Move down for device state
+
+            String deviceStateText = deviceState ? "DEVICE: ON" : "DEVICE: OFF";
+            int deviceStateColor = deviceState ? Color.rgb(76, 175, 80) : Color.rgb(244, 67, 54); // Green for ON, Red for OFF
+
+            statusPaint.setColor(deviceStateColor);
+            statusPaint.setTextSize(22); // Slightly larger text for device state
+            canvas.drawText(deviceStateText, width / 2, startY, statusPaint);
+            statusPaint.setTextSize(20); // Reset to original size
 
             return startY + 40;
         }
-
         /**
          * Draw three clean progress circles (centered)
          */
