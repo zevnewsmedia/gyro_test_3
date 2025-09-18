@@ -145,7 +145,26 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
     /**
      * Initialize device ID and rider name from SharedPreferences or prompt user
+     *
+     *
      */
+
+    private void saveDeviceToServer() {
+        if (socket == null || !socketConnected || riderName == null || riderName.isEmpty()) {
+            return;
+        }
+
+        try {
+            JSONObject deviceData = new JSONObject();
+            deviceData.put("deviceId", deviceId);
+            deviceData.put("rider", riderName);
+
+            socket.emit("save_device", deviceData);
+            Log.d(TAG, "Device saved: " + deviceId + " - " + riderName);
+        } catch (JSONException e) {
+            Log.e(TAG, "Error saving device", e);
+        }
+    }
     private void initializeDeviceAndRider() {
         SharedPreferences prefs = getSharedPreferences("app_prefs", MODE_PRIVATE);
         // Optional: Clear previous rider name for testing
@@ -203,6 +222,9 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             riderName = name.isEmpty() ? "New Rider" : name;
             prefs.edit().putString("rider_name", riderName).apply();
             Log.d("RiderName", "New rider name entered: " + riderName);
+
+            // Save device to MongoDB
+            saveDeviceToServer();
 
             // Refresh the dial view to show the new name
             if (dialView != null) {
@@ -567,6 +589,10 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             socketConnected = true;
             Log.d(TAG, "✓ Connected to server");
             showToast("✓ Connected to server", Toast.LENGTH_SHORT);
+
+            // Save device to MongoDB when connected
+            saveDeviceToServer();
+
             if (dialView != null) {
                 dialView.setConnectionStatus(true);
             }
