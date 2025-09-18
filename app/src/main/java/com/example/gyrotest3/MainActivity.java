@@ -99,6 +99,8 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     private boolean socketConnected = false;
     private long lastSendTime = 0;
 
+    private boolean deviceState = true; // true = on, false = off
+
     // ========================================
     // UI COMPONENTS
     // ========================================
@@ -137,6 +139,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     protected void onDestroy() {
         super.onDestroy();
         cleanup();
+
     }
 
     // ========================================
@@ -158,6 +161,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             JSONObject deviceData = new JSONObject();
             deviceData.put("deviceId", deviceId);
             deviceData.put("rider", riderName);
+            deviceData.put("state", deviceState ? "on" : "off"); // ADD THIS LINE
 
             socket.emit("save_device", deviceData);
             Log.d(TAG, "Device saved: " + deviceId + " - " + riderName);
@@ -593,6 +597,9 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             // Save device to MongoDB when connected
             saveDeviceToServer();
 
+            // Request current device state from server
+            requestDeviceState();
+
             if (dialView != null) {
                 dialView.setConnectionStatus(true);
             }
@@ -632,6 +639,53 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
                 Log.e(TAG, "Error parsing server response", e);
             }
         });
+
+        // Handler to receive state changes from web interface
+        socket.on("device_state_updated", args -> runOnUiThread(() -> {
+            try {
+                JSONObject data = (JSONObject) args[0];
+                String receivedDeviceId = data.getString("deviceId");
+                String newState = data.getString("state");
+
+                // Only update if it's for this device
+                if (deviceId.equals(receivedDeviceId)) {
+                    deviceState = "on".equals(newState);
+                    showToast("Device state changed to: " + newState, Toast.LENGTH_SHORT);
+                    Log.d(TAG, "State updated from web: " + newState);
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "Error parsing state update", e);
+            }
+        }));
+
+        // Handler for state change confirmations
+        socket.on("state_change_confirmed", args -> runOnUiThread(() -> {
+            try {
+                JSONObject data = (JSONObject) args[0];
+                boolean success = data.getBoolean("success");
+                String state = data.getString("state");
+
+                if (success) {
+                    showToast("Device state: " + state, Toast.LENGTH_SHORT);
+                } else {
+                    showToast("Failed to change state", Toast.LENGTH_SHORT);
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "Error parsing state confirmation", e);
+            }
+        }));
+
+        // Handler for device state response
+        socket.on("device_state_response", args -> runOnUiThread(() -> {
+            try {
+                JSONObject data = (JSONObject) args[0];
+                String state = data.getString("state");
+                deviceState = "on".equals(state);
+                Log.d(TAG, "Current device state: " + state);
+            } catch (Exception e) {
+                Log.e(TAG, "Error parsing state response", e);
+            }
+        }));
     }
 
     /**
@@ -704,7 +758,23 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             Log.d(TAG, "Socket disconnected in onDestroy");
         }
     }
+    /**
+     * Get current device state from server
+     */
+    private void requestDeviceState() {
+        if (socket == null || !socketConnected) {
+            return;
+        }
 
+        try {
+            JSONObject requestData = new JSONObject();
+            requestData.put("deviceId", deviceId);
+
+            socket.emit("get_device_state", requestData);
+        } catch (JSONException e) {
+            Log.e(TAG, "Error requesting device state", e);
+        }
+    }
     // ========================================
     // CUSTOM VIEW - GYRO DIAL DISPLAY
     // ========================================
