@@ -120,13 +120,22 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         setupUI();
         initializeComponents();
         // Removed automatic connection - now manual via button
+        // ADD THIS LINE - Auto-connect on startup
+        connectToServer();
     }
+
+// MODIFICATION 2: Update onResume method
+// ========================================
 
     @Override
     protected void onResume() {
         super.onResume();
         registerSensorListener();
-        // Removed automatic socket reconnection
+
+        // ADD THIS BLOCK - Auto-reconnect when app resumes
+        if (socket != null && !socket.connected()) {
+            connectToServer();
+        }
     }
 
     @Override
@@ -256,25 +265,27 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         mainLayout.setOrientation(LinearLayout.VERTICAL);
         mainLayout.setBackgroundColor(Color.WHITE);
 
-        // Create connection button
+        // Create connection button (but we'll hide it)
         setupConnectionButton();
+        connectionButton.setVisibility(View.GONE); // HIDE THE BUTTON
 
         // Create and add custom dial view (takes up most of the space)
         dialView = new GyroDialView(this);
         LinearLayout.LayoutParams dialParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                0, // Height will be determined by weight
-                1.0f // Take up all remaining space
+                LinearLayout.LayoutParams.MATCH_PARENT // Changed from 0 height with weight
         );
         dialView.setLayoutParams(dialParams);
         dialActive = true;
 
         // Add views to layout
         mainLayout.addView(dialView);
-        mainLayout.addView(connectionButton);
+        // Don't add the button to layout since it's hidden
+        // mainLayout.addView(connectionButton); // COMMENT OUT OR REMOVE
 
         setContentView(mainLayout);
     }
+
 
     /**
      * Setup the connection/disconnection button
@@ -593,6 +604,13 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     /**
      * Setup all Socket.IO event listeners
      */
+    // ========================================
+// MODIFICATION 4: Add auto-reconnection logic
+// ========================================
+
+    /**
+     * Setup all Socket.IO event listeners (with auto-reconnect)
+     */
     private void setupSocketEventListeners() {
         socket.on(Socket.EVENT_CONNECT, args -> runOnUiThread(() -> {
             socketConnected = true;
@@ -621,20 +639,27 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             }
             updateConnectionButton();
             connectionButton.setEnabled(true);
+
+            // ADD AUTO-RECONNECT LOGIC
+            scheduleReconnection();
         }));
 
         socket.on(Socket.EVENT_CONNECT_ERROR, args -> runOnUiThread(() -> {
             socketConnected = false;
             String error = args.length > 0 ? args[0].toString() : "Unknown error";
             Log.e(TAG, "✗ Connection error: " + error);
-            showToast("Connection failed", Toast.LENGTH_LONG);
+            showToast("Connection failed - retrying...", Toast.LENGTH_SHORT);
             if (dialView != null) {
                 dialView.setConnectionStatus(false);
             }
             updateConnectionButton();
             connectionButton.setEnabled(true);
+
+            // ADD AUTO-RECONNECT LOGIC
+            scheduleReconnection();
         }));
 
+        // ... rest of your existing socket event handlers remain the same
         socket.on("attitude_data", args -> {
             try {
                 JSONObject data = (JSONObject) args[0];
@@ -645,7 +670,6 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             }
         });
 
-        // Handler to receive state changes from web interface
         socket.on("device_state_updated", args -> runOnUiThread(() -> {
             try {
                 JSONObject data = (JSONObject) args[0];
@@ -657,9 +681,8 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
                     showToast("Device state changed to: " + newState, Toast.LENGTH_SHORT);
                     Log.d(TAG, "State updated from web: " + newState);
 
-                    // UPDATE THE DISPLAY
                     if (dialView != null) {
-                        dialView.invalidate(); // Refresh the view to show new state
+                        dialView.invalidate();
                     }
                 }
             } catch (Exception e) {
@@ -667,7 +690,6 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             }
         }));
 
-        // Handler for state change confirmations
         socket.on("state_change_confirmed", args -> runOnUiThread(() -> {
             try {
                 JSONObject data = (JSONObject) args[0];
@@ -684,7 +706,6 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             }
         }));
 
-        // Handler for device state response
         socket.on("device_state_response", args -> runOnUiThread(() -> {
             try {
                 JSONObject data = (JSONObject) args[0];
@@ -696,7 +717,6 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             }
         }));
     }
-
     /**
      * Send attitude data to server with throttling (only when connected)
      */
@@ -764,6 +784,17 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     /**
      * Clean up resources on app destruction
      */
+
+
+    private void scheduleReconnection() {
+        // Use a handler to delay reconnection attempt
+        new android.os.Handler(getMainLooper()).postDelayed(() -> {
+            if (!socketConnected && socket != null) {
+                Log.d(TAG, "Attempting automatic reconnection...");
+                connectToServer();
+            }
+        }, 3000); // Wait 3 seconds before reconnecting
+    }
     private void cleanup() {
         if (socket != null) {
             socket.disconnect();
