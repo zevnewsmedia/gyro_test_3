@@ -279,24 +279,29 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     /**
      * Setup the connection/disconnection button
      */
+    /**
+     * Setup the connection/disconnection button (smaller version)
+     */
     private void setupConnectionButton() {
         connectionButton = new Button(this);
-        connectionButton.setText("CONNECT TO SERVER");
-        connectionButton.setTextSize(16);
-        connectionButton.setBackgroundColor(Color.BLUE); // Blue
+        connectionButton.setText("CONNECT");
+        connectionButton.setTextSize(12); // Reduced from 16
+        connectionButton.setBackgroundColor(Color.BLUE);
         connectionButton.setTextColor(Color.WHITE);
-        connectionButton.setPadding(20, 15, 20, 15);
+        connectionButton.setPadding(15, 8, 15, 8); // Reduced padding
 
-        // Set layout parameters for the button
+        // Set layout parameters for a smaller button aligned to the left
         LinearLayout.LayoutParams buttonParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
+                300, // Fixed width instead of MATCH_PARENT (adjust this value as needed)
                 LinearLayout.LayoutParams.WRAP_CONTENT
         );
-        buttonParams.setMargins(20, 10, 20, 10);
+        buttonParams.setMargins(20, 5, 0, 5); // Left margin only, no right margin
+        buttonParams.gravity = Gravity.LEFT; // Align button to the left
         connectionButton.setLayoutParams(buttonParams);
 
         connectionButton.setOnClickListener(v -> toggleConnection());
     }
+
 
     /**
      * Initialize all components (sensors, socket)
@@ -327,10 +332,10 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     private void updateConnectionButton() {
         runOnUiThread(() -> {
             if (socketConnected) {
-                connectionButton.setText("DISCONNECT FROM SERVER");
+                connectionButton.setText("DISCONNECT");
                 connectionButton.setBackgroundColor(Color.rgb(244, 67, 54)); // Red
             } else {
-                connectionButton.setText("CONNECT TO SERVER");
+                connectionButton.setText("CONNECT");
                 connectionButton.setBackgroundColor(Color.BLUE);
             }
         });
@@ -343,7 +348,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         if (socket != null && !socket.connected()) {
             Log.d(TAG, "Connecting to server...");
             connectionButton.setEnabled(false);
-            connectionButton.setText("CONNECTING...");
+            connectionButton.setText("CONNECTING...");  // This is fine as-is
             socket.connect();
         }
     }
@@ -355,7 +360,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         if (socket != null && socket.connected()) {
             Log.d(TAG, "Disconnecting from server...");
             connectionButton.setEnabled(false);
-            connectionButton.setText("DISCONNECTING...");
+            connectionButton.setText("DISCONNECTING...");  // This is fine as-is
             socket.disconnect();
         }
     }
@@ -722,11 +727,15 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     /**
      * Create JSON object with attitude data
      */
+    /**
+     * Create JSON object with attitude data including stream state
+     */
     private JSONObject createAttitudeDataJson(String displayName) throws JSONException {
         JSONObject attitudeData = new JSONObject();
         attitudeData.put("pitch", Math.round(currentPitch * 10.0) / 10.0);
         attitudeData.put("yaw", Math.round(currentYaw * 10.0) / 10.0);
         attitudeData.put("roll", Math.round(currentRoll * 10.0) / 10.0);
+        attitudeData.put("stream", deviceState ? "on" : "off");  // Add this line
         attitudeData.put("rider", "gyro_app");
         attitudeData.put("riderDisplayName", displayName);
         return attitudeData;
@@ -737,11 +746,10 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
      */
     private void logDataTransmission(long currentTime, String displayName) {
         if (currentTime % 1000 < SEND_INTERVAL) {
-            Log.d(TAG, String.format("Sent [%s]: P=%.1f°, Y=%.1f°, R=%.1f°",
-                    displayName, currentPitch, currentYaw, currentRoll));
+            Log.d(TAG, String.format("Sent [%s]: P=%.1f°, Y=%.1f°, R=%.1f°, Stream=%s",
+                    displayName, currentPitch, currentYaw, currentRoll, deviceState ? "on" : "off"));
         }
     }
-
     // ========================================
     // UTILITY METHODS
     // ========================================
@@ -946,28 +954,38 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
             // Calculate total content height to center everything vertically
             int logoHeight = (logoBitmap != null) ? 94 : 0;
-            int riderNameHeight = (riderName != null && !riderName.isEmpty()) ? 40 : 0;
             int circleRadius = Math.min(width / 6, height / 4) - 20;
             int circleAreaHeight = circleRadius * 2 + 100; // Circle + titles + labels
-            int connectionStatusHeight = 30;
+            int riderNameHeight = (riderName != null && !riderName.isEmpty()) ? 40 : 0;
+            int connectionStatusHeight = 60; // Increased to accommodate both connection and device status
 
-            int totalContentHeight = logoHeight + riderNameHeight + circleAreaHeight + connectionStatusHeight + 60; // 60 for spacing
+            int totalContentHeight = logoHeight + circleAreaHeight + riderNameHeight + connectionStatusHeight + 60; // 60 for spacing
 
             // Calculate starting Y position to center all content
             int startY = Math.max(20, (height - totalContentHeight) / 2);
 
             int currentY = startY;
 
-            // Draw all components with calculated positions
-            currentY = drawCenteredHeader(canvas, width, currentY);
-            currentY = drawCenteredConnectionStatus(canvas, width, currentY);
+            // Draw logo at the top
+            currentY = drawCenteredLogo(canvas, width, currentY);
+
+            // Draw the progress circles
             currentY = drawCenteredProgressCircles(canvas, width, currentY, circleRadius);
+
+            // Draw rider name below the circles
+            currentY = drawCenteredRiderName(canvas, width, currentY);
+
+            // Draw connection status below rider name
+            currentY = drawCenteredConnectionStatus(canvas, width, currentY);
         }
 
         /**
          * Draw header with logo and rider name (centered)
          */
-        private int drawCenteredHeader(Canvas canvas, int width, int startY) {
+        /**
+         * Draw just the logo (separated from header)
+         */
+        private int drawCenteredLogo(Canvas canvas, int width, int startY) {
             int currentY = startY;
 
             // Draw logo at the top if available
@@ -982,20 +1000,27 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
                 int logoX = (width - logoWidth) / 2;
                 canvas.drawBitmap(scaledLogo, logoX, currentY, null);
 
-                currentY += logoHeight + 20;
-            }
-
-            // Draw rider name
-            if (riderName != null && !riderName.isEmpty()) {
-                currentY += 50; // Creates 50px margin ABOVE the text
-
-                textPaint.setTextSize(44);
-                textPaint.setColor(Color.rgb(158, 158, 158));
-                canvas.drawText("RIDER: " + riderName.toUpperCase(), width / 2, currentY, textPaint);
-                currentY += 40; // Space after the text
+                currentY += logoHeight + 40; // Add some space after logo
             }
 
             return currentY;
+        }
+
+        /**
+         * Draw rider name below the circles
+         */
+        private int drawCenteredRiderName(Canvas canvas, int width, int startY) {
+            // Draw rider name
+            if (riderName != null && !riderName.isEmpty()) {
+                startY += 30; // Creates margin above the text
+
+                textPaint.setTextSize(44);
+                textPaint.setColor(Color.rgb(158, 158, 158));
+                canvas.drawText("RIDER: " + riderName.toUpperCase(), width / 2, startY, textPaint);
+                startY += 20; // Space after the text
+            }
+
+            return startY;
         }
 
         /**
@@ -1004,7 +1029,12 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         /**
          * Draw connection status and device state (centered)
          */
+        /**
+         * Draw connection status and device state below rider name
+         */
         private int drawCenteredConnectionStatus(Canvas canvas, int width, int startY) {
+            startY += 20; // Add some space above connection status
+
             // Connection status
             String statusText;
             int statusColor;
@@ -1021,7 +1051,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             statusPaint.setTextAlign(Paint.Align.CENTER);
             canvas.drawText(statusText, width / 2, startY, statusPaint);
 
-            // ADD DEVICE STATE DISPLAY
+            // Device state display
             startY += 35; // Move down for device state
 
             String deviceStateText = deviceState ? "DEVICE: ON" : "DEVICE: OFF";
@@ -1036,6 +1066,9 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         }
         /**
          * Draw three clean progress circles (centered)
+         */
+        /**
+         * Draw three clean progress circles (modified to not include status info)
          */
         private int drawCenteredProgressCircles(Canvas canvas, int width, int startY, int circleRadius) {
             int centerY = startY + circleRadius + 60; // Add space for titles above circles
