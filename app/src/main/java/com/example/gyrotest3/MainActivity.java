@@ -73,6 +73,8 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     // SENSOR COMPONENTS
     // ========================================
 
+    private float currentGForce = 0; // Forward G-force
+
     private SensorManager sensorManager;
     private Sensor accelerometer;
     private Sensor magnetometer;
@@ -538,6 +540,10 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         currentRoll = (float) Math.toDegrees(Math.atan2(-y, Math.sqrt(x * x + z * z)));
         currentPitch = (float) Math.toDegrees(Math.atan2(x, Math.sqrt(y * y + z * z)));
 
+        // Calculate TOTAL G-force (magnitude of acceleration vector)
+        float totalAccel = (float) Math.sqrt(x * x + y * y + z * z);
+        currentGForce = totalAccel / 9.81f;  // This will show ~1.0G when stationary
+
         // Detect forward motion
         detectForwardMotion(y);
 
@@ -548,7 +554,6 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
         updateDialView();
         sendAttitudeData();
-
     }
 
     /**
@@ -756,6 +761,9 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     /**
      * Send attitude data to server with throttling (only when connected)
      */
+    /**
+     * Send attitude data to server with throttling (only when connected)
+     */
     private void sendAttitudeData() {
         if (socket == null || !socketConnected) {
             return;
@@ -773,6 +781,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
         try {
             JSONObject attitudeData = createAttitudeDataJson(displayName);
+            Log.d(TAG, "JSON SENT: " + attitudeData.toString()); // Show full JSON being sent
             socket.emit("attitude_update", attitudeData);
             logDataTransmission(currentTime, displayName);
         } catch (JSONException e) {
@@ -794,6 +803,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         attitudeData.put("stream", deviceState ? "on" : "off");  // Add this line
         attitudeData.put("rider", "gyro_app");
         attitudeData.put("riderDisplayName", displayName);
+        attitudeData.put("gforce", Math.round(currentGForce * 100.0) / 100.0); // Round to 2 decimal places
         return attitudeData;
     }
 
@@ -1112,6 +1122,9 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         /**
          * Draw connection status and device state below rider name (side by side)
          */
+        /**
+         * Draw connection status and device state below rider name (side by side)
+         */
         private int drawCenteredConnectionStatus(Canvas canvas, int width, int startY) {
             startY += 20;
 
@@ -1177,7 +1190,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             }
 
             String gForceText = String.format("%.2f G", gForce);
-            int gForceColor = gForce > 1.2f ? Color.rgb(255, 152, 0) : Color.rgb(158, 158, 158);
+            int gForceColor = gForce > 1.5f ? Color.rgb(255, 152, 0) : Color.rgb(158, 158, 158);
 
             statusPaint.setColor(gForceColor);
             statusPaint.setTextSize(20);
