@@ -1106,6 +1106,9 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         /**
          * Draw connection status and device state below rider name (side by side)
          */
+        /**
+         * Draw connection status and device state below rider name (side by side)
+         */
         private int drawCenteredConnectionStatus(Canvas canvas, int width, int startY) {
             startY += 20;
 
@@ -1140,9 +1143,17 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             statusPaint.setTextAlign(Paint.Align.CENTER);
             canvas.drawText(statusText, centerX, startY, statusPaint);
 
-            // Forward motion status (right)
-            String motionText = isMovingForward ? "● FORWARD" : "● STOPPED";
-            int motionColor = isMovingForward ? Color.rgb(33, 150, 243) : Color.rgb(158, 158, 158);
+            // Speed display (right) - calculate average speed from acceleration history
+            float avgAccel = 0;
+            for (float accel : linearAccelHistory) {
+                avgAccel += Math.abs(accel);
+            }
+            avgAccel /= linearAccelHistory.length;
+
+            // Simple speed estimate based on acceleration magnitude (rough approximation)
+            float estimatedSpeed = avgAccel * 10f; // Arbitrary multiplier for visualization
+            String motionText = String.format("%.1f km/h", estimatedSpeed);
+            int motionColor = estimatedSpeed > 1.0f ? Color.rgb(33, 150, 243) : Color.rgb(158, 158, 158);
 
             statusPaint.setColor(motionColor);
             statusPaint.setTextSize(20);
