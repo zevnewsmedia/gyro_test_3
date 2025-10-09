@@ -1109,24 +1109,28 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         /**
          * Draw connection status and device state below rider name (side by side)
          */
+        /**
+         * Draw connection status and device state below rider name (side by side)
+         */
         private int drawCenteredConnectionStatus(Canvas canvas, int width, int startY) {
             startY += 20;
 
-            // Calculate positions for three items side by side
-            int spacing = width / 3;
-            int leftX = spacing / 2;
-            int centerX = width / 2;
-            int rightX = width - spacing / 2;
+            // Calculate positions for four items side by side
+            int spacing = width / 4;
+            int pos1X = spacing / 2;
+            int pos2X = spacing + spacing / 2;
+            int pos3X = 2 * spacing + spacing / 2;
+            int pos4X = 3 * spacing + spacing / 2;
 
-            // Rider name (left)
+            // Rider name (position 1)
             if (riderName != null && !riderName.isEmpty()) {
                 statusPaint.setColor(Color.rgb(158, 158, 158));
                 statusPaint.setTextSize(20);
                 statusPaint.setTextAlign(Paint.Align.CENTER);
-                canvas.drawText("RIDER: " + riderName.toUpperCase(), leftX, startY, statusPaint);
+                canvas.drawText("RIDER: " + riderName.toUpperCase(), pos1X, startY, statusPaint);
             }
 
-            // Connection status (center)
+            // Connection status (position 2)
             String statusText;
             int statusColor;
 
@@ -1141,9 +1145,9 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             statusPaint.setColor(statusColor);
             statusPaint.setTextSize(20);
             statusPaint.setTextAlign(Paint.Align.CENTER);
-            canvas.drawText(statusText, centerX, startY, statusPaint);
+            canvas.drawText(statusText, pos2X, startY, statusPaint);
 
-            // Speed display (right) - calculate average speed from acceleration history
+            // Speed display (position 3) - calculate average speed from acceleration history
             float avgAccel = 0;
             for (float accel : linearAccelHistory) {
                 avgAccel += Math.abs(accel);
@@ -1152,13 +1156,33 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
             // Simple speed estimate based on acceleration magnitude (rough approximation)
             float estimatedSpeed = avgAccel * 10f; // Arbitrary multiplier for visualization
-            String motionText = String.format("%.1f km/h", estimatedSpeed);
-            int motionColor = estimatedSpeed > 1.0f ? Color.rgb(33, 150, 243) : Color.rgb(158, 158, 158);
+            String speedText = String.format("%.1f km/h", estimatedSpeed);
+            int speedColor = estimatedSpeed > 1.0f ? Color.rgb(33, 150, 243) : Color.rgb(158, 158, 158);
 
-            statusPaint.setColor(motionColor);
+            statusPaint.setColor(speedColor);
             statusPaint.setTextSize(20);
             statusPaint.setTextAlign(Paint.Align.CENTER);
-            canvas.drawText(motionText, rightX, startY, statusPaint);
+            canvas.drawText(speedText, pos3X, startY, statusPaint);
+
+            // G-Force display (position 4) - calculate total G-force from accelerometer
+            float gForce = 0;
+            if (accelerometerValues != null) {
+                // Calculate magnitude of acceleration vector
+                float x = accelerometerValues[0];
+                float y = accelerometerValues[1];
+                float z = accelerometerValues[2];
+                float totalAccel = (float) Math.sqrt(x * x + y * y + z * z);
+                // Convert to G-force (1 G = 9.81 m/s²)
+                gForce = totalAccel / 9.81f;
+            }
+
+            String gForceText = String.format("%.2f G", gForce);
+            int gForceColor = gForce > 1.2f ? Color.rgb(255, 152, 0) : Color.rgb(158, 158, 158);
+
+            statusPaint.setColor(gForceColor);
+            statusPaint.setTextSize(20);
+            statusPaint.setTextAlign(Paint.Align.CENTER);
+            canvas.drawText(gForceText, pos4X, startY, statusPaint);
 
             return startY + 30;
         }
