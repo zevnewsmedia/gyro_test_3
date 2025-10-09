@@ -91,6 +91,17 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     private float[] rotationMatrix = new float[9];
     private float[] orientationValues = new float[3];
 
+
+
+    // Sensor data storage for orientation calculation
+
+
+    // Forward motion detection
+    private boolean isMovingForward = false;
+    private float[] linearAccelHistory = new float[10];
+    private int accelHistoryIndex = 0;
+    private static final float FORWARD_THRESHOLD = 0.5f;
+
     // ========================================
     // NETWORK & SOCKET.IO
     // ========================================
@@ -527,6 +538,9 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         currentRoll = (float) Math.toDegrees(Math.atan2(-y, Math.sqrt(x * x + z * z)));
         currentPitch = (float) Math.toDegrees(Math.atan2(x, Math.sqrt(y * y + z * z)));
 
+        // Detect forward motion
+        detectForwardMotion(y);
+
         // If magnetometer is not available, keep yaw at 0
         if (magnetometer == null) {
             currentYaw = 0;
@@ -534,6 +548,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
         updateDialView();
         sendAttitudeData();
+
     }
 
     /**
@@ -565,6 +580,27 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             updateDialView();
             sendAttitudeData();
         }
+    }
+
+    /**
+     * Detect forward motion based on Y-axis acceleration (landscape mode)
+     */
+    private void detectForwardMotion(float yAccel) {
+        float linearAccel = yAccel;
+
+        // Store in history for smoothing
+        linearAccelHistory[accelHistoryIndex] = Math.abs(linearAccel);
+        accelHistoryIndex = (accelHistoryIndex + 1) % linearAccelHistory.length;
+
+        // Calculate average acceleration
+        float avgAccel = 0;
+        for (float accel : linearAccelHistory) {
+            avgAccel += accel;
+        }
+        avgAccel /= linearAccelHistory.length;
+
+        // Detect motion
+        isMovingForward = avgAccel > FORWARD_THRESHOLD;
     }
 
     /**
@@ -1004,7 +1040,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             currentY = drawCenteredProgressCircles(canvas, width, currentY, circleRadius);
 
             // Draw rider name below the circles
-            currentY = drawCenteredRiderName(canvas, width, currentY);
+       //     currentY = drawCenteredRiderName(canvas, width, currentY);
 
             // Draw connection status below rider name
             currentY = drawCenteredConnectionStatus(canvas, width, currentY);
@@ -1040,19 +1076,20 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         /**
          * Draw rider name below the circles
          */
-        private int drawCenteredRiderName(Canvas canvas, int width, int startY) {
+        /*CODE NOT BEING USED*/
+      /*  private int drawCenteredRiderName(Canvas canvas, int width, int startY) {
             // Draw rider name
             if (riderName != null && !riderName.isEmpty()) {
-                startY += 30; // Creates margin above the text
+                startY += 2; // Creates margin above the text
 
-                textPaint.setTextSize(44);
+                textPaint.setTextSize(14);
                 textPaint.setColor(Color.rgb(158, 158, 158));
                 canvas.drawText("RIDER: " + riderName.toUpperCase(), width / 2, startY, textPaint);
                 startY += 20; // Space after the text
             }
 
             return startY;
-        }
+        }*/
 
         /**
          * Draw connection status (centered)
@@ -1063,37 +1100,56 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         /**
          * Draw connection status and device state below rider name
          */
+        /**
+         * Draw connection status and device state below rider name (side by side)
+         */
+        /**
+         * Draw connection status and device state below rider name (side by side)
+         */
         private int drawCenteredConnectionStatus(Canvas canvas, int width, int startY) {
-            startY += 20; // Add some space above connection status
+            startY += 20;
 
-            // Connection status
+            // Calculate positions for three items side by side
+            int spacing = width / 3;
+            int leftX = spacing / 2;
+            int centerX = width / 2;
+            int rightX = width - spacing / 2;
+
+            // Rider name (left)
+            if (riderName != null && !riderName.isEmpty()) {
+                statusPaint.setColor(Color.rgb(158, 158, 158));
+                statusPaint.setTextSize(20);
+                statusPaint.setTextAlign(Paint.Align.CENTER);
+                canvas.drawText("RIDER: " + riderName.toUpperCase(), leftX, startY, statusPaint);
+            }
+
+            // Connection status (center)
             String statusText;
             int statusColor;
 
             if (connected) {
-                statusText = "● Connected";
+                statusText = "● CONNECTED";
                 statusColor = Color.rgb(76, 175, 80);
             } else {
-                statusText = "● Disconnected";
+                statusText = "● DISCONNECTED";
                 statusColor = Color.rgb(244, 67, 54);
             }
 
             statusPaint.setColor(statusColor);
+            statusPaint.setTextSize(20);
             statusPaint.setTextAlign(Paint.Align.CENTER);
-            canvas.drawText(statusText, width / 2, startY, statusPaint);
+            canvas.drawText(statusText, centerX, startY, statusPaint);
 
-            // Device state display
-            startY += 35; // Move down for device state
+            // Forward motion status (right)
+            String motionText = isMovingForward ? "● FORWARD" : "● STOPPED";
+            int motionColor = isMovingForward ? Color.rgb(33, 150, 243) : Color.rgb(158, 158, 158);
 
-            String deviceStateText = deviceState ? "DEVICE: ON" : "DEVICE: OFF";
-            int deviceStateColor = deviceState ? Color.rgb(76, 175, 80) : Color.rgb(244, 67, 54); // Green for ON, Red for OFF
+            statusPaint.setColor(motionColor);
+            statusPaint.setTextSize(20);
+            statusPaint.setTextAlign(Paint.Align.CENTER);
+            canvas.drawText(motionText, rightX, startY, statusPaint);
 
-            statusPaint.setColor(deviceStateColor);
-            statusPaint.setTextSize(22); // Slightly larger text for device state
-            canvas.drawText(deviceStateText, width / 2, startY, statusPaint);
-            statusPaint.setTextSize(20); // Reset to original size
-
-            return startY + 40;
+            return startY + 30;
         }
         /**
          * Draw three clean progress circles (centered)
