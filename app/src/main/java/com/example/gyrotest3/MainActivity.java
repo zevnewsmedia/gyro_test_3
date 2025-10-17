@@ -800,10 +800,20 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         attitudeData.put("pitch", Math.round(currentPitch * 10.0) / 10.0);
         attitudeData.put("yaw", Math.round(currentYaw * 10.0) / 10.0);
         attitudeData.put("roll", Math.round(currentRoll * 10.0) / 10.0);
-        attitudeData.put("stream", deviceState ? "on" : "off");  // Add this line
+        attitudeData.put("stream", deviceState ? "on" : "off");
         attitudeData.put("rider", "gyro_app");
         attitudeData.put("riderDisplayName", displayName);
-        attitudeData.put("gforce", Math.round(currentGForce * 100.0) / 100.0); // Round to 2 decimal places
+        attitudeData.put("gforce", Math.round(currentGForce * 100.0) / 100.0);
+
+        // Calculate speed from acceleration history (same as in UI)
+        float avgAccel = 0;
+        for (float accel : linearAccelHistory) {
+            avgAccel += Math.abs(accel);
+        }
+        avgAccel /= linearAccelHistory.length;
+        float estimatedSpeed = avgAccel * 10f;
+        attitudeData.put("speed", Math.round(estimatedSpeed * 100.0) / 100.0);
+
         return attitudeData;
     }
 
