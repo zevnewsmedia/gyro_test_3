@@ -55,7 +55,8 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     // ========================================
 
     private static final String TAG = "GyroSocket";
-    private static final String SERVER_URL = "http://3.91.244.249:5000/";
+    //private static final String SERVER_URL = "http://3.91.244.249:5000/";
+    private static final String SERVER_URL = "http://18.207.115.76:5000/";
     private static final long SEND_INTERVAL = 100;
     private static final int LOCATION_PERMISSION_REQUEST_CODE = 100;
 
@@ -74,9 +75,15 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     private boolean wasAirborne = false;
     private long airborneStartTime = 0;
 
+    // Step Counter
+    private int totalSteps = 0;
+    private int initialSteps = -1;
+    private int sessionSteps = 0;
+
     private SensorManager sensorManager;
     private Sensor accelerometer;
     private Sensor magnetometer;
+    private Sensor stepCounter;
     private GyroDialView dialView;
     private float currentYaw = 0;
     private float currentPitch = 0;
@@ -352,6 +359,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
         accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
         magnetometer = sensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD);
+        stepCounter = sensorManager.getDefaultSensor(Sensor.TYPE_STEP_COUNTER);
         locationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
 
         if (accelerometer == null) {
@@ -364,6 +372,13 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         } else {
             Log.d(TAG, "Magnetometer available - Full orientation tracking enabled");
         }
+
+        if (stepCounter == null) {
+            Log.w(TAG, "Step Counter not available");
+            showToast("Step Counter not available", Toast.LENGTH_SHORT);
+        } else {
+            Log.d(TAG, "Step Counter available - Step tracking enabled");
+        }
     }
 
     private void registerSensorListener() {
@@ -375,6 +390,11 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         if (magnetometer != null && sensorManager != null) {
             sensorManager.registerListener(this, magnetometer, SensorManager.SENSOR_DELAY_UI);
             Log.d(TAG, "Magnetometer listener registered");
+        }
+
+        if (stepCounter != null && sensorManager != null) {
+            sensorManager.registerListener(this, stepCounter, SensorManager.SENSOR_DELAY_UI);
+            Log.d(TAG, "Step Counter listener registered");
         }
     }
 
@@ -471,6 +491,8 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         } else if (event.sensor.getType() == Sensor.TYPE_MAGNETIC_FIELD) {
             System.arraycopy(event.values, 0, magnetometerValues, 0, 3);
             hasMagnetometerData = true;
+        } else if (event.sensor.getType() == Sensor.TYPE_STEP_COUNTER) {
+            processStepCounter(event.values[0]);
         }
 
         if (hasAccelerometerData && hasMagnetometerData) {
@@ -551,6 +573,23 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
                 Log.d(TAG, "LANDED - Flight time: " + flightTime + "ms");
                 wasAirborne = false;
             }
+        }
+    }
+
+    /**
+     * Processes step counter data
+     */
+    private void processStepCounter(float steps) {
+        totalSteps = (int) steps;
+
+        // Initialize baseline on first reading
+        if (initialSteps == -1) {
+            initialSteps = totalSteps;
+            sessionSteps = 0;
+            Log.d(TAG, "Step counter initialized at: " + initialSteps);
+        } else {
+            sessionSteps = totalSteps - initialSteps;
+            Log.d(TAG, "Steps this session: " + sessionSteps);
         }
     }
 
@@ -704,6 +743,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         attitudeData.put("gforce", Math.round(currentGForce * 100.0) / 100.0);
         attitudeData.put("speed", Math.round(currentSpeed * 100.0) / 100.0);
         attitudeData.put("airborne", wasAirborne);
+        attitudeData.put("steps", sessionSteps);
 
         return attitudeData;
     }
@@ -925,11 +965,12 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         private int drawCenteredConnectionStatus(Canvas canvas, int width, int startY) {
             startY += 20;
 
-            int spacing = width / 4;
+            int spacing = width / 5; // Changed from /4 to /5 for 5 items
             int pos1X = spacing / 2;
             int pos2X = spacing + spacing / 2;
             int pos3X = 2 * spacing + spacing / 2;
             int pos4X = 3 * spacing + spacing / 2;
+            int pos5X = 4 * spacing + spacing / 2;
 
             if (riderName != null && !riderName.isEmpty()) {
                 statusPaint.setColor(Color.rgb(158, 158, 158));
@@ -978,6 +1019,15 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             statusPaint.setTextSize(20);
             statusPaint.setTextAlign(Paint.Align.CENTER);
             canvas.drawText(gForceText, pos4X, startY, statusPaint);
+
+            // Step counter display
+            String stepsText = sessionSteps + " steps";
+            int stepsColor = sessionSteps > 0 ? Color.rgb(156, 39, 176) : Color.rgb(158, 158, 158);
+
+            statusPaint.setColor(stepsColor);
+            statusPaint.setTextSize(20);
+            statusPaint.setTextAlign(Paint.Align.CENTER);
+            canvas.drawText(stepsText, pos5X, startY, statusPaint);
 
             return startY + 30;
         }
